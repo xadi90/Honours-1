@@ -21,7 +21,9 @@ data class AppUpdateInfo(
 
 object UpdateChecker {
     private const val GITHUB_RELEASES_API =
-        "https://api.github.com/repos/xadiahmed/honours-solution/releases/latest"
+        "https://api.github.com/repos/xadi90/Honours-1/releases/latest"
+    private const val DIRECT_GITHUB_APK_URL =
+        "https://github.com/xadi90/Honours-1/releases/latest/download/HonoursSolution.apk"
     private const val OFFICIAL_WEBSITE_URL = "https://honours-solution.pages.dev"
 
     private val client by lazy {
@@ -42,7 +44,7 @@ object UpdateChecker {
 
         // 1. Prefer Firestore-managed version_info when populated by Admin
         if (remoteVersionCode != null && remoteVersionCode > 0 && !remoteVersionName.isNullOrBlank()) {
-            val url = remoteDownloadUrl?.takeIf { it.startsWith("https://") } ?: OFFICIAL_WEBSITE_URL
+            val url = remoteDownloadUrl?.takeIf { it.startsWith("https://") } ?: DIRECT_GITHUB_APK_URL
             return@withContext AppUpdateInfo(
                 currentVersionCode = currentCode,
                 currentVersionName = currentName,
@@ -55,7 +57,7 @@ object UpdateChecker {
             )
         }
 
-        // 2. Fallback to GitHub Releases API check
+        // 2. Fallback to GitHub Releases API check (prefers direct .apk asset URL)
         try {
             val request = Request.Builder()
                 .url(GITHUB_RELEASES_API)
@@ -67,6 +69,18 @@ object UpdateChecker {
                     val json = JSONObject(body)
                     val tagName = json.optString("tag_name", "v$currentName").removePrefix("v")
                     val htmlUrl = json.optString("html_url", OFFICIAL_WEBSITE_URL)
+                    val assets = json.optJSONArray("assets")
+                    var directApkUrl = ""
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.optJSONObject(i) ?: continue
+                            val assetUrl = asset.optString("browser_download_url", "")
+                            if (assetUrl.endsWith(".apk", ignoreCase = true)) {
+                                directApkUrl = assetUrl
+                                break
+                            }
+                        }
+                    }
                     val notes = json.optString("body", "Latest stable build from GitHub Releases.")
                     val isNewer = compareSemanticVersions(tagName, currentName) > 0
                     return@withContext AppUpdateInfo(
@@ -75,7 +89,7 @@ object UpdateChecker {
                         latestVersionCode = if (isNewer) currentCode + 1 else currentCode,
                         latestVersionName = tagName,
                         releaseNotes = notes,
-                        downloadUrl = htmlUrl,
+                        downloadUrl = directApkUrl.ifBlank { htmlUrl },
                         updateAvailable = isNewer,
                         sourceLabel = "GitHub Releases"
                     )

@@ -17,12 +17,19 @@ DEPARTMENTS.forEach((name) => {
   deptContainer.appendChild(span);
 });
 
-fetch("https://api.github.com/repos/xadiahmed/honours-solution/releases/latest")
+fetch("https://api.github.com/repos/xadi90/Honours-1/releases/latest")
   .then((res) => (res.ok ? res.json() : null))
   .then((data) => {
     const el = document.getElementById("release-status");
+    const btn = document.getElementById("apk-download-btn");
     if (data && data.tag_name) {
       el.textContent = `Latest Release: ${data.tag_name} • Free Android APK`;
+      const apkAsset = Array.isArray(data.assets)
+        ? data.assets.find((a) => a.browser_download_url && a.browser_download_url.endsWith(".apk"))
+        : null;
+      if (btn && apkAsset) {
+        btn.href = apkAsset.browser_download_url;
+      }
     } else {
       el.textContent = "Honours Solution v1.0 • National University Bangladesh";
     }
