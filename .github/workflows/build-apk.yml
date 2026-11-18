@@ -35,6 +35,12 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Accept Android SDK Licenses
+        run: |
+          if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          fi
+
       - name: Build Honours Solution APK
         run: |
           gradle assembleDebug --no-daemon
