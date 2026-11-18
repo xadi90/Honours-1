@@ -44,11 +44,15 @@ jobs:
         shell: bash
         run: |
           if [ -s debug.keystore.base64 ]; then
-            base64 -d debug.keystore.base64 > debug.keystore || rm -f debug.keystore
+            tr -d '[:space:]' < debug.keystore.base64 | base64 -d > debug.keystore || rm -f debug.keystore
+            echo "Restored debug.keystore from debug.keystore.base64."
+          else
+            echo "::warning::debug.keystore.base64 missing! Generating fallback debug.keystore (Google Sign-In SHA-1 may not match Firebase)."
           fi
           if [ ! -s debug.keystore ]; then
             keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           fi
+          keytool -list -v -keystore debug.keystore -alias androiddebugkey -storepass android -keypass android | grep -E "SHA1:|SHA256:" || true
 
       - name: Verify or Restore google-services.json
         shell: bash
