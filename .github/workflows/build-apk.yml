@@ -22,18 +22,23 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Accept All Android SDK Licenses
+      - name: Prepare Android SDK & Accept Licenses
         shell: bash
         run: |
-          SDK_DIR="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
           mkdir -p "$SDK_DIR/licenses"
           printf "\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n8933bad161af4178b1185d1a37fbf41ea5269c55\nd56f5187479451eabf01fb78af6dfcb131a6481e\n" > "$SDK_DIR/licenses/android-sdk-license"
           printf "\n84831b9409646a918e30573bab4c9c91346d8abd\n" > "$SDK_DIR/licenses/android-sdk-preview-license"
-          set +o pipefail
-          yes | "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null 2>&1 || true
+
+          SDKMANAGER=$(find "$SDK_DIR/cmdline-tools" -name sdkmanager -type f 2>/dev/null | head -n 1 || true)
+          if [ -n "$SDKMANAGER" ]; then
+            set +o pipefail
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install "platform-tools" "platforms;android-36.1" "build-tools;36.0.0" || \
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" || true
+          fi
 
       - name: Restore Keystore
         shell: bash
@@ -46,7 +51,7 @@ jobs:
           fi
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: '9.3.1'
 
@@ -63,7 +68,7 @@ jobs:
           path: release-apk/HonoursSolution.apk
 
       - name: Publish APK to GitHub Releases
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v1.0.${{ github.run_number }}
           name: Honours Solution v1.0.${{ github.run_number }}
