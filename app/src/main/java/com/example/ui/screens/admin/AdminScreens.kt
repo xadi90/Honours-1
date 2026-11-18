@@ -79,6 +79,7 @@ import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
 import com.example.data.model.Department
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.PdfResource
 import com.example.data.model.StudyQuestion
 import com.example.data.model.Subject
@@ -260,12 +261,23 @@ fun AdminDashboardScreen(
     onNavigatePdfUpload: () -> Unit,
     onNavigateContentEditor: () -> Unit,
     onNavigateAnnouncements: () -> Unit,
-    onNavigateReports: () -> Unit
+    onNavigateReports: () -> Unit,
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
+    onSaveDeveloperProfile: (DeveloperProfileConfig) -> Unit = {}
 ) {
     var modelName by remember(remoteConfig.modelName) { mutableStateOf(remoteConfig.modelName) }
     var sysInstructions by remember(remoteConfig.systemInstructions) { mutableStateOf(remoteConfig.systemInstructions) }
     var maintenanceMode by remember(remoteConfig.maintenanceMode) { mutableStateOf(remoteConfig.maintenanceMode) }
     var maintenanceMsg by remember(remoteConfig.maintenanceMessage) { mutableStateOf(remoteConfig.maintenanceMessage) }
+
+    var devName by remember(developerProfile.name) { mutableStateOf(developerProfile.name) }
+    var devTagline by remember(developerProfile.tagline) { mutableStateOf(developerProfile.tagline) }
+    var devDeptFocus by remember(developerProfile.departmentFocus) { mutableStateOf(developerProfile.departmentFocus) }
+    var devBio by remember(developerProfile.bio) { mutableStateOf(developerProfile.bio) }
+    var devPhone by remember(developerProfile.phone) { mutableStateOf(developerProfile.phone) }
+    var devEmail by remember(developerProfile.email) { mutableStateOf(developerProfile.email) }
+    var devWebsiteUrl by remember(developerProfile.websiteUrl) { mutableStateOf(developerProfile.websiteUrl) }
+    var devWebsiteLabel by remember(developerProfile.websiteLabel) { mutableStateOf(developerProfile.websiteLabel) }
 
     Column(
         modifier = Modifier
@@ -388,6 +400,101 @@ fun AdminDashboardScreen(
                             Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("AI কনফিগারেশন আপডেট করুন")
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionHeader(
+                            title = "ডেভেলপারের সকল তথ্য পরিবর্তন (Admin Only)",
+                            subtitle = "শুধুমাত্র অ্যাডমিন এখান থেকে ডেভেলপারের নাম, নম্বর, ইমেইল, বায়ো ও ওয়েবসাইট পরিবর্তন করতে পারবেন; সাধারণ ইউজার পরিবর্তন করতে পারবে না।"
+                        )
+                        OutlinedTextField(
+                            value = devName,
+                            onValueChange = { devName = it },
+                            label = { Text("ডেভেলপারের নাম (Developer Name)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devTagline,
+                            onValueChange = { devTagline = it },
+                            label = { Text("প্রতিষ্ঠান / ট্যাগলাইন") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devDeptFocus,
+                            onValueChange = { devDeptFocus = it },
+                            label = { Text("বিভাগ / ফোকাস") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devPhone,
+                            onValueChange = { devPhone = it },
+                            label = { Text("ফোন নম্বর") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devEmail,
+                            onValueChange = { devEmail = it },
+                            label = { Text("ইমেইল") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devWebsiteUrl,
+                            onValueChange = { devWebsiteUrl = it },
+                            label = { Text("ওয়েবসাইট লিংক (URL)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devWebsiteLabel,
+                            onValueChange = { devWebsiteLabel = it },
+                            label = { Text("ওয়েবসাইট বাটনের লেখা") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = devBio,
+                            onValueChange = { devBio = it },
+                            label = { Text("পরিচিতি / বায়ো") },
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Button(
+                            onClick = {
+                                onSaveDeveloperProfile(
+                                    DeveloperProfileConfig(
+                                        name = devName.trim(),
+                                        tagline = devTagline.trim(),
+                                        departmentFocus = devDeptFocus.trim(),
+                                        bio = devBio.trim(),
+                                        phone = devPhone.trim(),
+                                        email = devEmail.trim(),
+                                        websiteUrl = devWebsiteUrl.trim(),
+                                        websiteLabel = devWebsiteLabel.trim()
+                                    )
+                                )
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
+                                .testTag("admin_save_developer_button")
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("ডেভেলপার তথ্য সংরক্ষণ করুন")
                         }
                     }
                 }

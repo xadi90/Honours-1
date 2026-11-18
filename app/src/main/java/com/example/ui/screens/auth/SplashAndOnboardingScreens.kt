@@ -581,7 +581,7 @@ fun FirebaseConfigErrorScreen(onRetry: () -> Unit) {
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
                     Text(
-                        text = "এই APK-তে Firebase সংযোগ ফাইল (app/google-services.json) সঠিকভাবে যুক্ত নেই। সম্পূর্ণ অ্যাপ ব্যবহার করতে GitHub রিপোজিটরির app/ ফোল্ডারে google-services.json রেখে পুনরায় APK বিল্ড করুন।",
+                        text = "এই APK-তে app/google-services.json যুক্ত নেই। সম্পূর্ণ সমাধানের জন্য GitHub রিপোজিটরির Settings → Secrets → Actions-এ GOOGLE_SERVICES_JSON নামে ফাইলটি সেভ করুন অথবা app/ ফোল্ডারে google-services.json রেখে পুনরায় বিল্ড করুন।",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer
                     )
@@ -612,7 +612,7 @@ fun FirebaseConfigErrorScreen(onRetry: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(360.dp)
+                    .height(380.dp)
                     .padding(horizontal = 20.dp, vertical = 12.dp)
             ) {
                 items(AcademicSeedCatalog.honoursYears) { (yr, label) ->
@@ -623,6 +623,14 @@ fun FirebaseConfigErrorScreen(onRetry: () -> Unit) {
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.fillMaxWidth().padding(12.dp)
                         )
+                    }
+                }
+                items(AcademicSeedCatalog.starterSubjects) { subj ->
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                        Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                            Text("${subj.courseCode} • ${subj.titleBn}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                            Text(subj.titleEn, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }

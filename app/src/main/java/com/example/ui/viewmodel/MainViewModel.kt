@@ -13,6 +13,7 @@ import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.ModelTestResult
 import com.example.data.model.UiState
 import com.example.data.model.UserProfile
@@ -88,6 +89,13 @@ class MainViewModel(
             emit(AiRemoteConfig())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AiRemoteConfig())
+
+    val developerProfile: StateFlow<DeveloperProfileConfig> = firestoreRepo.observeDeveloperProfile()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "developer_profile")
+            emit(DeveloperProfileConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DeveloperProfileConfig())
 
     private val _isAdmin = MutableStateFlow(firestoreRepo.isBootstrappedAdminUser())
     val isAdmin: StateFlow<Boolean> = _isAdmin.asStateFlow()

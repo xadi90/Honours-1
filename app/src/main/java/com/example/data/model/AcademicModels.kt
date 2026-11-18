@@ -207,3 +207,17 @@ data class BookmarkItem(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+@Keep
+@IgnoreExtraProperties
+data class DeveloperProfileConfig(
+    val name: String = "Xadi Ahmed",
+    val tagline: String = "জাতীয় বিশ্ববিদ্যালয়",
+    val departmentFocus: String = "Political Science (অনার্স ১ম–৪র্থ বর্ষ)",
+    val bio: String = "জাতীয় বিশ্ববিদ্যালয়ের রাষ্ট্রবিজ্ঞান অনার্স ১ম থেকে ৪র্থ বর্ষের শিক্ষার্থীদের জন্য আধুনিক একাডেমিক সহায়িকা, AI প্রশ্ন সমাধান এবং সকল বিভাগের PDF লাইব্রেরি।",
+    val phone: String = "01878864913",
+    val email: String = "xadiahmed23@gmail.com",
+    val websiteUrl: String = "https://honours-solution.pages.dev",
+    val websiteLabel: String = "Official Website (Cloudflare Pages)"
+)
+

@@ -13,6 +13,7 @@ import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
 import com.example.data.model.Chapter
 import com.example.data.model.Department
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.ModelTest
 import com.example.data.model.ModelTestResult
 import com.example.data.model.PdfResource
@@ -544,6 +545,24 @@ class FirestoreRepository(
                 )
             }
 
+    fun observeDeveloperProfile(): Flow<DeveloperProfileConfig> =
+        db.collection("app_settings").document("developer_profile")
+            .snapshots()
+            .map { snap ->
+                val defaults = DeveloperProfileConfig()
+                if (!snap.exists()) defaults
+                else DeveloperProfileConfig(
+                    name = snap.getString("name")?.takeIf { it.isNotBlank() } ?: defaults.name,
+                    tagline = snap.getString("tagline")?.takeIf { it.isNotBlank() } ?: defaults.tagline,
+                    departmentFocus = snap.getString("departmentFocus")?.takeIf { it.isNotBlank() } ?: defaults.departmentFocus,
+                    bio = snap.getString("bio")?.takeIf { it.isNotBlank() } ?: defaults.bio,
+                    phone = snap.getString("phone")?.takeIf { it.isNotBlank() } ?: defaults.phone,
+                    email = snap.getString("email")?.takeIf { it.isNotBlank() } ?: defaults.email,
+                    websiteUrl = snap.getString("websiteUrl")?.takeIf { it.isNotBlank() } ?: defaults.websiteUrl,
+                    websiteLabel = snap.getString("websiteLabel")?.takeIf { it.isNotBlank() } ?: defaults.websiteLabel
+                )
+            }
+
     suspend fun getVersionInfoMap(): Map<String, Any?> {
         return try {
             val snap = db.collection("app_settings").document("version_info").get().await()
@@ -915,6 +934,36 @@ class FirestoreRepository(
                 SetOptions.merge()
             ).await()
             logAdminAction("UPDATE_AI_CONFIG", "Model=${config.modelName}, maintenance=${config.maintenanceMode}")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun saveDeveloperProfile(config: DeveloperProfileConfig): Result<Unit> {
+        val path = "app_settings/developer_profile"
+        val defaults = DeveloperProfileConfig()
+        return try {
+            requireUserId()
+            val cleanName = config.name.trim().ifBlank { defaults.name }.take(120)
+            db.document(path).set(
+                mapOf(
+                    "name" to cleanName,
+                    "tagline" to config.tagline.trim().ifBlank { defaults.tagline }.take(160),
+                    "departmentFocus" to config.departmentFocus.trim().ifBlank { defaults.departmentFocus }.take(200),
+                    "bio" to config.bio.trim().ifBlank { defaults.bio }.take(1000),
+                    "phone" to config.phone.trim().ifBlank { defaults.phone }.take(40),
+                    "email" to config.email.trim().ifBlank { defaults.email }.take(160),
+                    "websiteUrl" to config.websiteUrl.trim().ifBlank { defaults.websiteUrl }.take(300),
+                    "websiteLabel" to config.websiteLabel.trim().ifBlank { defaults.websiteLabel }.take(120),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+            logAdminAction("UPDATE_DEVELOPER_PROFILE", "Updated developer info ($cleanName)")
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e

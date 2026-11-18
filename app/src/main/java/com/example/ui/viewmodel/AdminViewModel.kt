@@ -14,6 +14,7 @@ import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
 import com.example.data.model.Department
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.PdfResource
 import com.example.data.model.StudyQuestion
 import com.example.data.model.Subject
@@ -283,6 +284,14 @@ class AdminViewModel(
             firestoreRepo.saveAiRemoteConfig(config)
                 .onSuccess { _adminToast.value = "AI instructions & model config updated remotely." }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save AI config.") }
+        }
+    }
+
+    fun saveDeveloperProfile(config: DeveloperProfileConfig) {
+        viewModelScope.launch {
+            firestoreRepo.saveDeveloperProfile(config)
+                .onSuccess { _adminToast.value = "ডেভেলপারের সকল তথ্য সফলভাবে আপডেট করা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to update developer profile.") }
         }
     }
 }

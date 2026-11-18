@@ -5,8 +5,12 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AiRemoteConfig
+import com.example.data.model.DeveloperProfileConfig
+import com.example.ui.screens.admin.AdminDashboardScreen
 import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.home.HomeDashboardScreen
+import com.example.ui.screens.profile.AboutDeveloperScreen
 import com.example.ui.theme.HonoursSolutionTheme
 import org.junit.Rule
 import org.junit.Test
@@ -88,4 +92,50 @@ class HomeAndFallbackRobolectricTest {
         }
         composeRule.waitForIdle()
     }
+
+    @Test
+    fun `about developer and admin developer editor render cleanly`() {
+        val customDev = DeveloperProfileConfig(
+            name = "Xadi Ahmed",
+            tagline = "NU Bangladesh",
+            phone = "01878864913",
+            email = "xadiahmed23@gmail.com"
+        )
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AboutDeveloperScreen(onBack = {}, developerProfile = customDev)
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("developer_call_button").assertExists()
+        composeRule.onNodeWithTag("developer_email_button").assertExists()
+    }
+
+    @Test
+    fun `admin dashboard renders developer info editor`() {
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AdminDashboardScreen(
+                    departmentsCount = 22,
+                    subjectsCount = 10,
+                    pdfsCount = 5,
+                    openReportsCount = 0,
+                    remoteConfig = AiRemoteConfig(),
+                    adminLogs = emptyList(),
+                    onBack = {},
+                    onLockPanel = {},
+                    onSeedCatalog = {},
+                    onSaveAiConfig = {},
+                    onNavigatePdfUpload = {},
+                    onNavigateContentEditor = {},
+                    onNavigateAnnouncements = {},
+                    onNavigateReports = {},
+                    developerProfile = DeveloperProfileConfig(),
+                    onSaveDeveloperProfile = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+    }
 }
+

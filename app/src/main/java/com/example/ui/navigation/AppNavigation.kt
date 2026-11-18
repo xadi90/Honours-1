@@ -266,6 +266,7 @@ private fun MainAuthenticatedShell(
     val testResultsState by mainViewModel.testResults.collectAsStateWithLifecycle()
     val announcements by mainViewModel.announcements.collectAsStateWithLifecycle()
     val aiRemoteConfig by mainViewModel.aiRemoteConfig.collectAsStateWithLifecycle()
+    val developerProfile by mainViewModel.developerProfile.collectAsStateWithLifecycle()
     val isBackendAdmin by mainViewModel.isAdmin.collectAsStateWithLifecycle()
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val mainActionMsg by mainViewModel.actionMessage.collectAsStateWithLifecycle()
@@ -579,7 +580,8 @@ private fun MainAuthenticatedShell(
                             onDownloadsClick = { navController.navigate(AppRoutes.DOWNLOAD_MANAGER) },
                             onSubjectClick = { subjId -> navController.navigate(AppRoutes.subjectDetails(subjId)) },
                             onPdfClick = { pdfId -> navController.navigate(AppRoutes.pdfReader(pdfId)) },
-                            onAboutDeveloperClick = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) }
+                            onAboutDeveloperClick = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) },
+                            developerProfile = developerProfile
                         )
                     }
 
@@ -942,7 +944,8 @@ private fun MainAuthenticatedShell(
                             onOpenAboutDeveloper = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) },
                             onSignOut = {
                                 signOut(credentialManager, scope)
-                            }
+                            },
+                            developerProfile = developerProfile
                         )
                     }
 
@@ -959,7 +962,10 @@ private fun MainAuthenticatedShell(
                     }
 
                     composable(AppRoutes.ABOUT_DEVELOPER) {
-                        AboutDeveloperScreen(onBack = { navController.popBackStack() })
+                        AboutDeveloperScreen(
+                            onBack = { navController.popBackStack() },
+                            developerProfile = developerProfile
+                        )
                     }
 
                     composable(AppRoutes.ADMIN_PASSWORD) {
@@ -1009,7 +1015,9 @@ private fun MainAuthenticatedShell(
                             onNavigatePdfUpload = { navController.navigate(AppRoutes.ADMIN_PDF_UPLOAD) },
                             onNavigateContentEditor = { navController.navigate(AppRoutes.ADMIN_CONTENT_EDITOR) },
                             onNavigateAnnouncements = { navController.navigate(AppRoutes.ADMIN_ANNOUNCEMENTS) },
-                            onNavigateReports = { navController.navigate(AppRoutes.ADMIN_REPORTS) }
+                            onNavigateReports = { navController.navigate(AppRoutes.ADMIN_REPORTS) },
+                            developerProfile = developerProfile,
+                            onSaveDeveloperProfile = { adminViewModel.saveDeveloperProfile(it) }
                         )
                     }
 

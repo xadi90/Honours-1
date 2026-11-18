@@ -82,6 +82,7 @@ import com.example.core.AppUpdateInfo
 import com.example.core.PdfUtils
 import com.example.data.model.BookmarkItem
 import com.example.data.model.Department
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.ModelTestResult
 import com.example.data.model.StructuredAiAnswer
 import com.example.data.model.UiState
@@ -290,7 +291,8 @@ fun ProfileScreen(
     onOpenSettings: () -> Unit,
     onOpenAdminPanel: () -> Unit,
     onOpenAboutDeveloper: () -> Unit,
-    onSignOut: () -> Unit
+    onSignOut: () -> Unit,
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig()
 ) {
     var nameInput by remember(profile?.displayName) { mutableStateOf(profile?.displayName ?: "") }
     var selectedYear by remember(profile?.selectedYear) { mutableLongStateOf(profile?.selectedYear ?: 1L) }
@@ -480,7 +482,7 @@ fun ProfileScreen(
                     ProfileActionRow(
                         icon = Icons.Default.Info,
                         title = "ডেভেলপার পরিচিতি",
-                        subtitle = "Xadi Ahmed • জাতীয় বিশ্ববিদ্যালয়",
+                        subtitle = "${developerProfile.name} • ${developerProfile.tagline}",
                         testTag = "profile_about_row",
                         onClick = onOpenAboutDeveloper
                     )
@@ -735,7 +737,10 @@ fun SettingsScreen(
 }
 
 @Composable
-fun AboutDeveloperScreen(onBack: () -> Unit) {
+fun AboutDeveloperScreen(
+    onBack: () -> Unit,
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig()
+) {
     val context = LocalContext.current
 
     Column(
@@ -783,7 +788,7 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "জাতীয় বিশ্ববিদ্যালয়ের রাষ্ট্রবিজ্ঞান অনার্স ১ম থেকে ৪র্থ বর্ষের শিক্ষার্থীদের জন্য আধুনিক একাডেমিক সহায়িকা, AI প্রশ্ন সমাধান এবং সকল বিভাগের PDF লাইব্রেরি।",
+                            text = developerProfile.bio,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -799,15 +804,15 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                 ) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         SectionHeader(title = "Developer Information")
-                        Text("Developer Name: Xadi Ahmed", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                        Text("Department Focus: Political Science (অনার্স ১ম–৪র্থ বর্ষ)", style = MaterialTheme.typography.bodySmall)
+                        Text("Developer Name: ${developerProfile.name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                        Text("Department Focus: ${developerProfile.departmentFocus}", style = MaterialTheme.typography.bodySmall)
                         Text("App Version: v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.bodySmall)
 
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = {
                                     runCatching {
-                                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:01878864913")))
+                                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${developerProfile.phone.trim()}")))
                                     }
                                 },
                                 modifier = Modifier
@@ -817,12 +822,12 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                             ) {
                                 Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Text("01878864913")
+                                Text(developerProfile.phone, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                             OutlinedButton(
                                 onClick = {
                                     runCatching {
-                                        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:xadiahmed23@gmail.com")).apply {
+                                        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:${developerProfile.email.trim()}")).apply {
                                             putExtra(Intent.EXTRA_SUBJECT, "Honours Solution — Feedback / Support")
                                         }
                                         context.startActivity(intent)
@@ -839,7 +844,7 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                             }
                         }
                         Text(
-                            text = "Email: xadiahmed23@gmail.com",
+                            text = "Email: ${developerProfile.email}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -847,25 +852,29 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                 }
             }
 
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        SectionHeader(title = "Official Web & Releases")
-                        OutlinedButton(
-                            onClick = {
-                                runCatching {
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://honours-solution.pages.dev")))
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Language, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Official Website (Cloudflare Pages)")
+            if (developerProfile.websiteUrl.isNotBlank()) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionHeader(title = "Official Web & Releases")
+                            OutlinedButton(
+                                onClick = {
+                                    runCatching {
+                                        val rawUrl = developerProfile.websiteUrl.trim()
+                                        val normalizedUrl = if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) rawUrl else "https://$rawUrl"
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(normalizedUrl)))
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Language, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(developerProfile.websiteLabel.ifBlank { "Official Website" })
+                            }
                         }
                     }
                 }

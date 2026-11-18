@@ -71,6 +71,7 @@ import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
 import com.example.data.model.Department
+import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.PdfResource
 import com.example.data.model.StudyQuestion
 import com.example.data.model.Subject
@@ -105,7 +106,8 @@ fun HomeDashboardScreen(
     onDownloadsClick: () -> Unit,
     onSubjectClick: (String) -> Unit,
     onPdfClick: (String) -> Unit,
-    onAboutDeveloperClick: () -> Unit
+    onAboutDeveloperClick: () -> Unit,
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig()
 ) {
     val studentName = profile?.displayName?.takeIf { it.isNotBlank() } ?: "NU Student"
     val recentPdfs = remember(pdfs, recentPdfIds) {
@@ -588,8 +590,8 @@ fun HomeDashboardScreen(
                     ) {
                         Icon(Icons.Default.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                         Column {
-                            Text("Developed by Xadi Ahmed", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                            Text("National University, Bangladesh • Contact & Info", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Developed by ${developerProfile.name}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Text("${developerProfile.tagline} • Contact & Info", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "View developer info")
