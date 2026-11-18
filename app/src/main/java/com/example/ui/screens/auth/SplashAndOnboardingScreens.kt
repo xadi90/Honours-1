@@ -319,7 +319,9 @@ fun OnboardingScreen(onComplete: () -> Unit) {
 fun AuthScreen(onAuthSuccess: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -386,7 +388,7 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            if (errorMessage != null) {
+            errorMessage?.let { msg ->
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     modifier = Modifier
@@ -394,7 +396,7 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
                         .widthIn(max = 520.dp)
                 ) {
                     Text(
-                        text = errorMessage!!,
+                        text = msg,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                         modifier = Modifier.padding(14.dp)
@@ -532,6 +534,95 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
                                 Text(dept.code, style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FirebaseConfigErrorScreen(onRetry: () -> Unit) {
+    var showPreviewSheet by remember { mutableStateOf(false) }
+    Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_honours_emblem),
+                contentDescription = "Honours Solution Logo",
+                modifier = Modifier
+                    .size(84.dp)
+                    .clip(RoundedCornerShape(20.dp))
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "Honours Solution",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Firebase কনফিগারেশন পাওয়া যায়নি",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        text = "এই APK-তে Firebase সংযোগ ফাইল (app/google-services.json) সঠিকভাবে যুক্ত নেই। সম্পূর্ণ অ্যাপ ব্যবহার করতে GitHub রিপোজিটরির app/ ফোল্ডারে google-services.json রেখে পুনরায় APK বিল্ড করুন।",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).height(48.dp)
+            ) {
+                Text("আবার চেষ্টা করুন (Retry)")
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = { showPreviewSheet = true },
+                modifier = Modifier.fillMaxWidth().widthIn(max = 520.dp).height(48.dp)
+            ) {
+                Icon(Icons.Default.MenuBook, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Preview NU Honours Structure (Offline)")
+            }
+        }
+    }
+
+    if (showPreviewSheet) {
+        ModalBottomSheet(onDismissRequest = { showPreviewSheet = false }) {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(360.dp)
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                items(AcademicSeedCatalog.honoursYears) { (yr, label) ->
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                        Text(
+                            text = "$label (Year $yr)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.fillMaxWidth().padding(12.dp)
+                        )
                     }
                 }
             }

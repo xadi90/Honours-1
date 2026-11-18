@@ -37,13 +37,22 @@ private fun getDefaultWebClientId(context: Context): String? {
 
 fun attemptAutoSignIn(
     context: Context,
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     onAuthSuccess: () -> Unit,
     onUnauthenticated: () -> Unit,
     scope: CoroutineScope
 ) {
-    if (Firebase.auth.currentUser != null) {
+    if (!ensureFirebaseReady(context)) {
+        onUnauthenticated()
+        return
+    }
+    val existingUser = runCatching { Firebase.auth.currentUser }.getOrNull()
+    if (existingUser != null) {
         onAuthSuccess()
+        return
+    }
+    if (credentialManager == null) {
+        onUnauthenticated()
         return
     }
     val clientId = getDefaultWebClientId(context) ?: run {
@@ -71,7 +80,7 @@ fun attemptAutoSignIn(
             }
         } catch (e: CancellationException) {
             throw e
-        } catch (_: Exception) {
+        } catch (_: Throwable) {
             onUnauthenticated()
         }
     }
@@ -79,12 +88,20 @@ fun attemptAutoSignIn(
 
 fun onGoogleSignInClicked(
     context: Context,
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
+    if (!ensureFirebaseReady(context)) {
+        onAuthError("Firebase is not configured in this build. Please check google-services.json.")
+        return
+    }
+    if (credentialManager == null) {
+        onAuthError("Google Credential Manager is unavailable on this device. Please update Google Play Services.")
+        return
+    }
     val clientId = getDefaultWebClientId(context) ?: run {
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
         return
@@ -115,26 +132,26 @@ fun onGoogleSignInClicked(
             onAuthCancelled()
         } catch (e: CancellationException) {
             throw e
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(AUTH_TAG, "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed")
+            onAuthError(e.localizedMessage ?: "Sign in failed. Please check Google Play Services & network.")
         }
     }
 }
 
 fun signOut(
-    credentialManager: CredentialManager,
+    credentialManager: CredentialManager?,
     scope: CoroutineScope,
     onSignOutComplete: () -> Unit = {}
 ) {
     scope.launch {
         withContext(NonCancellable) {
             try {
-                credentialManager.clearCredentialState(ClearCredentialStateRequest())
-            } catch (e: Exception) {
+                credentialManager?.clearCredentialState(ClearCredentialStateRequest())
+            } catch (e: Throwable) {
                 Log.w(AUTH_TAG, "Failed to clear credential state: ${e.message}")
             } finally {
-                Firebase.auth.signOut()
+                runCatching { Firebase.auth.signOut() }
                 onSignOutComplete()
             }
         }

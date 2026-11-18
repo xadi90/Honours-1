@@ -73,6 +73,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.core.NetworkMonitor
 import com.example.core.PreferencesManager
+import com.example.core.ensureFirebaseReady
 import com.example.core.signOut
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AnswerLength
@@ -91,6 +92,7 @@ import com.example.ui.screens.ai.AiQuestionSolverScreen
 import com.example.ui.screens.ai.AnswerDetailsScreen
 import com.example.ui.screens.ai.QuestionImageUploadScreen
 import com.example.ui.screens.auth.AuthScreen
+import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.auth.OnboardingScreen
 import com.example.ui.screens.auth.SplashScreen
 import com.example.ui.screens.exams.McqPracticeScreen
@@ -149,10 +151,18 @@ fun HonoursSolutionApp() {
     val prefs = remember(appContext) { PreferencesManager(appContext) }
     val scope = rememberCoroutineScope()
 
+    var firebaseCheckTick by remember { mutableStateOf(0) }
+    val firebaseReady = remember(appContext, firebaseCheckTick) { ensureFirebaseReady(appContext) }
+
     val themeMode by prefs.themeMode.collectAsStateWithLifecycle(initialValue = AppThemeMode.SYSTEM)
     val onboardingDone by prefs.onboardingCompleted.collectAsStateWithLifecycle(initialValue = true)
-    val currentUser by remember { Firebase.auth.authStateFlow() }
-        .collectAsStateWithLifecycle(initialValue = Firebase.auth.currentUser)
+    val currentUserFlow = remember(firebaseReady) {
+        if (firebaseReady) Firebase.auth.authStateFlow() else kotlinx.coroutines.flow.flowOf(null)
+    }
+    val initialAuthUser = remember(firebaseReady) {
+        if (firebaseReady) runCatching { Firebase.auth.currentUser }.getOrNull() else null
+    }
+    val currentUser by currentUserFlow.collectAsStateWithLifecycle(initialValue = initialAuthUser)
 
     var splashFinished by remember { mutableStateOf(false) }
 
@@ -160,6 +170,9 @@ fun HonoursSolutionApp() {
         when {
             !splashFinished -> {
                 SplashScreen(onFinished = { splashFinished = true })
+            }
+            !firebaseReady -> {
+                FirebaseConfigErrorScreen(onRetry = { firebaseCheckTick++ })
             }
             !onboardingDone -> {
                 OnboardingScreen(
@@ -172,12 +185,13 @@ fun HonoursSolutionApp() {
                 AuthScreen(onAuthSuccess = {})
             }
             else -> {
-                val activeUser = currentUser!!
-                key(activeUser.uid) {
-                    MainAuthenticatedShell(
-                        currentUserId = activeUser.uid,
-                        prefs = prefs
-                    )
+                currentUser?.let { activeUser ->
+                    key(activeUser.uid) {
+                        MainAuthenticatedShell(
+                            currentUserId = activeUser.uid,
+                            prefs = prefs
+                        )
+                    }
                 }
             }
         }
@@ -192,7 +206,9 @@ private fun MainAuthenticatedShell(
     val context = LocalContext.current
     val appContext = context.applicationContext
     val scope = rememberCoroutineScope()
-    val credentialManager = remember(context) { CredentialManager.create(context) }
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
 
     val firestoreRepo = remember(appContext) { FirestoreRepository(appContext) }
     val aiRepo = remember { AiRepository() }
@@ -282,8 +298,6 @@ private fun MainAuthenticatedShell(
     val adminAuthError by adminViewModel.authError.collectAsStateWithLifecycle()
     val isAdminVerifying by adminViewModel.isVerifying.collectAsStateWithLifecycle()
     val adminToast by adminViewModel.adminToast.collectAsStateWithLifecycle()
-    val reportsState by adminViewModel.reports.collectAsStateWithLifecycle()
-    val adminLogs by adminViewModel.adminLogs.collectAsStateWithLifecycle()
 
     val userProfile = (userProfileState as? UiState.Success)?.data
     val departments = (departmentsState as? UiState.Success)?.data ?: AcademicSeedCatalog.defaultDepartments
@@ -975,6 +989,8 @@ private fun MainAuthenticatedShell(
                                 navController.popBackStack()
                             }
                         }
+                        val reportsState by adminViewModel.reports.collectAsStateWithLifecycle()
+                        val adminLogs by adminViewModel.adminLogs.collectAsStateWithLifecycle()
                         val openReportsCount = (reportsState as? UiState.Success)?.data?.count { it.status == "open" } ?: 0
                         AdminDashboardScreen(
                             departmentsCount = departments.size,
@@ -1033,6 +1049,7 @@ private fun MainAuthenticatedShell(
                     }
 
                     composable(AppRoutes.ADMIN_REPORTS) {
+                        val reportsState by adminViewModel.reports.collectAsStateWithLifecycle()
                         AdminReportScreen(
                             reportsState = reportsState,
                             onBack = { navController.popBackStack() },

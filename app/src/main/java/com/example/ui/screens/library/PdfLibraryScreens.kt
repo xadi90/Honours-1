@@ -426,13 +426,17 @@ fun PdfReaderScreen(
                         }
                         IconButton(onClick = {
                             localFile?.let { file ->
-                                val uri = PdfUtils.getShareUri(context, file)
-                                val intent = Intent(Intent.ACTION_SEND).apply {
-                                    type = "application/pdf"
-                                    putExtra(Intent.EXTRA_STREAM, uri)
-                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                runCatching {
+                                    val uri = PdfUtils.getShareUri(context, file)
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "application/pdf"
+                                        putExtra(Intent.EXTRA_STREAM, uri)
+                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Share PDF"))
+                                }.onFailure {
+                                    Toast.makeText(context, "No app found to share PDF.", Toast.LENGTH_SHORT).show()
                                 }
-                                context.startActivity(Intent.createChooser(intent, "Share PDF"))
                             }
                         }) {
                             Icon(Icons.Default.Share, contentDescription = "Share PDF")
@@ -487,20 +491,22 @@ fun PdfReaderScreen(
                 },
             contentAlignment = Alignment.Center
         ) {
+            val currentError = errorMsg
+            val currentBitmap = renderedBitmap
             when {
-                errorMsg != null -> {
+                currentError != null -> {
                     ErrorStateCard(
-                        message = errorMsg!!,
+                        message = currentError,
                         onRetry = { retryTick++ },
                         modifier = Modifier.padding(16.dp)
                     )
                 }
-                isLoading && renderedBitmap == null -> {
+                isLoading && currentBitmap == null -> {
                     CircularProgressIndicator(color = Color.White)
                 }
-                renderedBitmap != null -> {
+                currentBitmap != null -> {
                     Image(
-                        bitmap = renderedBitmap!!.asImageBitmap(),
+                        bitmap = currentBitmap.asImageBitmap(),
                         contentDescription = "PDF Page ${currentPage + 1}",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier

@@ -987,12 +987,16 @@ fun AnswerDetailsScreen(
                     }
                     OutlinedButton(
                         onClick = {
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "text/plain"
-                                putExtra(Intent.EXTRA_SUBJECT, answer.prashno)
-                                putExtra(Intent.EXTRA_TEXT, fullPlainText)
+                            runCatching {
+                                val intent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "text/plain"
+                                    putExtra(Intent.EXTRA_SUBJECT, answer.prashno)
+                                    putExtra(Intent.EXTRA_TEXT, fullPlainText)
+                                }
+                                context.startActivity(Intent.createChooser(intent, "Share Answer"))
+                            }.onFailure {
+                                Toast.makeText(context, "No app available to share.", Toast.LENGTH_SHORT).show()
                             }
-                            context.startActivity(Intent.createChooser(intent, "Share Answer"))
                         },
                         modifier = Modifier.weight(1f)
                     ) {
@@ -1007,13 +1011,17 @@ fun AnswerDetailsScreen(
                         onClick = {
                             scope.launch {
                                 onExportPdf().onSuccess { file ->
-                                    val shareUri = PdfUtils.getShareUri(context, file)
-                                    val intent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, shareUri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    runCatching {
+                                        val shareUri = PdfUtils.getShareUri(context, file)
+                                        val intent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "application/pdf"
+                                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                        }
+                                        context.startActivity(Intent.createChooser(intent, "Export Answer PDF"))
+                                    }.onFailure {
+                                        Toast.makeText(context, "Saved PDF, but no share app found.", Toast.LENGTH_SHORT).show()
                                     }
-                                    context.startActivity(Intent.createChooser(intent, "Export Answer PDF"))
                                 }.onFailure { err ->
                                     Toast.makeText(context, err.localizedMessage ?: "Export failed", Toast.LENGTH_SHORT).show()
                                 }

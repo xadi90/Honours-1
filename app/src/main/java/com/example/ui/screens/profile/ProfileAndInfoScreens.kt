@@ -708,7 +708,9 @@ fun SettingsScreen(
                                         if (info.updateAvailable) {
                                             Button(
                                                 onClick = {
-                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                                                    runCatching {
+                                                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(info.downloadUrl)))
+                                                    }
                                                 },
                                                 modifier = Modifier.fillMaxWidth()
                                             ) {
@@ -804,7 +806,9 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                             Button(
                                 onClick = {
-                                    context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:01878864913")))
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:01878864913")))
+                                    }
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -817,10 +821,12 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                             }
                             OutlinedButton(
                                 onClick = {
-                                    val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:xadiahmed23@gmail.com")).apply {
-                                        putExtra(Intent.EXTRA_SUBJECT, "Honours Solution — Feedback / Support")
+                                    runCatching {
+                                        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:xadiahmed23@gmail.com")).apply {
+                                            putExtra(Intent.EXTRA_SUBJECT, "Honours Solution — Feedback / Support")
+                                        }
+                                        context.startActivity(intent)
                                     }
-                                    context.startActivity(intent)
                                 },
                                 modifier = Modifier
                                     .weight(1f)
@@ -851,7 +857,9 @@ fun AboutDeveloperScreen(onBack: () -> Unit) {
                         SectionHeader(title = "Official Web & Releases")
                         OutlinedButton(
                             onClick = {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://honours-solution.pages.dev")))
+                                runCatching {
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://honours-solution.pages.dev")))
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
