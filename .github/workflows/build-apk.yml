@@ -61,19 +61,23 @@ jobs:
               printf '%s\n' "$GOOGLE_SERVICES_JSON" > app/google-services.json
               echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON secret."
             elif [ -n "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-              printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
+              printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | tr -d '[:space:]' | base64 -d > app/google-services.json
               echo "Restored app/google-services.json from GOOGLE_SERVICES_JSON_BASE64 secret."
             fi
           fi
           if [ ! -s app/google-services.json ]; then
-            echo "::error::Missing app/google-services.json! Add app/google-services.json to the repository OR set GOOGLE_SERVICES_JSON in GitHub Repository Secrets."
+            echo "::error::Missing app/google-services.json! Upload app/google-services.json to app/ on GitHub OR set GOOGLE_SERVICES_JSON in GitHub Repository Secrets."
+            exit 1
+          fi
+          if ! python3 -m json.tool app/google-services.json > /dev/null 2>&1; then
+            echo "::error::app/google-services.json is not valid JSON. Check GOOGLE_SERVICES_JSON secret formatting."
             exit 1
           fi
           if grep -q "remixed-project-id" app/google-services.json; then
             echo "::error::app/google-services.json contains placeholder remixed-project-id."
             exit 1
           fi
-          echo "Verified app/google-services.json is present."
+          echo "Verified app/google-services.json is present and valid."
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
