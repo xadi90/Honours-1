@@ -1,0 +1,6 @@
+{
+  "name": "Honours Solution",
+  "description": "National University (NU) Bangladesh Political Science Honours 1st–4th Year study companion, AI Question Solver & Study Assistant powered by Firebase AI Logic, and All-Departments PDF Library.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

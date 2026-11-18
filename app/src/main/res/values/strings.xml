@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">Honours Solution</string>
+    <string name="university_name">National University, Bangladesh</string>
+    <string name="tagline_bn">জাতীয় বিশ্ববিদ্যালয়ের অনার্স শিক্ষার্থীদের স্মার্ট একাডেমিক সমাধান</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_ai_tutor">AI Tutor</string>
+    <string name="nav_pdf_library">PDF Library</string>
+    <string name="nav_bookmarks">Bookmarks</string>
+    <string name="nav_profile">Profile</string>
+    <string name="developer_name">Xadi Ahmed</string>
+    <string name="developer_phone">01878864913</string>
+    <string name="developer_email">xadiahmed23@gmail.com</string>
+    <string name="admin_menu_title">কনটেন্ট ম্যানেজমেন্ট</string>
+    <string name="sign_in_google">Sign in with Google</string>
+    <string name="ai_solver_title">AI প্রশ্ন সমাধান</string>
+    <string name="all_dept_library_title">সকল বিভাগের PDF লাইব্রেরি</string>
+</resources>

@@ -1,0 +1,448 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Core Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isBootstrappedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        (request.auth.token.email == "xadiahmed7@gmail.com" ||
+         request.auth.token.email == "xadiahmed23@gmail.com");
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+        (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function isBoundedString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidStatus(status) {
+      return status in ['published', 'draft'];
+    }
+
+    // --- Validation Helpers ---
+    function isValidUserProfile(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        isBoundedString(data.displayName, 1, 100) &&
+        data.selectedDepartmentId is string && data.selectedDepartmentId.size() <= 128 &&
+        (!('selectedDepartmentName' in data) || isBoundedString(data.selectedDepartmentName, 0, 120)) &&
+        data.selectedYear is int && data.selectedYear >= 1 && data.selectedYear <= 4 &&
+        (!('email' in data) || isBoundedString(data.email, 0, 160)) &&
+        (!('photoUrl' in data) || isBoundedString(data.photoUrl, 0, 500)) &&
+        (!('languagePreference' in data) || data.languagePreference in ['bn_en', 'bn', 'en']) &&
+        (!('savedAnswersCount' in data) || (data.savedAnswersCount is int && data.savedAnswersCount >= 0)) &&
+        (!('bookmarksCount' in data) || (data.bookmarksCount is int && data.bookmarksCount >= 0)) &&
+        (!('testsCompletedCount' in data) || (data.testsCompletedCount is int && data.testsCompletedCount >= 0)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSavedAiAnswer(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        isBoundedString(data.question, 1, 2000) &&
+        isBoundedString(data.prashno, 1, 2000) &&
+        isBoundedString(data.bhumika, 1, 4000) &&
+        isBoundedString(data.mulAlochona, 1, 20000) &&
+        isBoundedString(data.uposhonghar, 1, 4000) &&
+        (!('answerLength' in data) || isBoundedString(data.answerLength, 0, 80)) &&
+        (!('yearLabel' in data) || isBoundedString(data.yearLabel, 0, 80)) &&
+        (!('subjectName' in data) || isBoundedString(data.subjectName, 0, 150)) &&
+        (!('language' in data) || isBoundedString(data.language, 0, 40)) &&
+        (!('importantPoints' in data) || (data.importantPoints is list && data.importantPoints.size() <= 25 && (data.importantPoints.size() == 0 || data.importantPoints[0] is string))) &&
+        (!('examples' in data) || isBoundedString(data.examples, 0, 6000)) &&
+        (!('sourceNote' in data) || isBoundedString(data.sourceNote, 0, 1000)) &&
+        (!('hasImageInput' in data) || data.hasImageInput is bool) &&
+        (!('bookmarked' in data) || data.bookmarked is bool) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAiConversation(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        isBoundedString(data.title, 1, 200) &&
+        isBoundedString(data.mode, 1, 60) &&
+        (!('subjectName' in data) || isBoundedString(data.subjectName, 0, 150)) &&
+        (!('yearNumber' in data) || (data.yearNumber is int && data.yearNumber >= 0 && data.yearNumber <= 4)) &&
+        (!('lastMessage' in data) || isBoundedString(data.lastMessage, 0, 500)) &&
+        (!('messageCount' in data) || (data.messageCount is int && data.messageCount >= 0)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAiMessage(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        data.role in ['user', 'model'] &&
+        isBoundedString(data.text, 1, 25000) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidBookmark(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        data.itemType in ['answer', 'pdf', 'chapter', 'pdf_page', 'suggestion'] &&
+        isBoundedString(data.targetId, 1, 150) &&
+        isBoundedString(data.title, 1, 250) &&
+        (!('subtitle' in data) || isBoundedString(data.subtitle, 0, 300)) &&
+        (!('pageNumber' in data) || (data.pageNumber is int && data.pageNumber >= 0)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidModelTestResult(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        isBoundedString(data.testId, 1, 128) &&
+        isBoundedString(data.testTitle, 1, 200) &&
+        (!('yearNumber' in data) || (data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4)) &&
+        (!('subjectName' in data) || isBoundedString(data.subjectName, 0, 150)) &&
+        data.totalQuestions is int && data.totalQuestions >= 1 && data.totalQuestions <= 200 &&
+        data.correctCount is int && data.correctCount >= 0 && data.correctCount <= data.totalQuestions &&
+        data.scorePercent is int && data.scorePercent >= 0 && data.scorePercent <= 100 &&
+        (!('durationSeconds' in data) || (data.durationSeconds is int && data.durationSeconds >= 0)) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    function isValidDepartment(data) {
+      return isBoundedString(data.nameBn, 1, 120) &&
+        isBoundedString(data.nameEn, 1, 120) &&
+        (!('code' in data) || isBoundedString(data.code, 0, 30)) &&
+        (!('description' in data) || isBoundedString(data.description, 0, 500)) &&
+        (!('hasStructuredSolution' in data) || data.hasStructuredSolution is bool) &&
+        (!('sortOrder' in data) || data.sortOrder is int) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSubject(data) {
+      return isBoundedString(data.departmentId, 1, 128) &&
+        data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4 &&
+        isBoundedString(data.courseCode, 1, 30) &&
+        isBoundedString(data.titleBn, 1, 200) &&
+        isBoundedString(data.titleEn, 1, 200) &&
+        (!('credits' in data) || (data.credits is int && data.credits >= 1 && data.credits <= 10)) &&
+        (!('syllabusNote' in data) || isBoundedString(data.syllabusNote, 0, 2000)) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidChapter(data) {
+      return isBoundedString(data.subjectId, 1, 128) &&
+        data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4 &&
+        data.chapterNumber is int && data.chapterNumber >= 1 && data.chapterNumber <= 100 &&
+        isBoundedString(data.titleBn, 1, 250) &&
+        (!('titleEn' in data) || isBoundedString(data.titleEn, 0, 250)) &&
+        (!('topics' in data) || (data.topics is list && data.topics.size() <= 40 && (data.topics.size() == 0 || data.topics[0] is string))) &&
+        (!('summary' in data) || isBoundedString(data.summary, 0, 10000)) &&
+        (!('definitions' in data) || isBoundedString(data.definitions, 0, 10000)) &&
+        (!('shortQuestions' in data) || isBoundedString(data.shortQuestions, 0, 15000)) &&
+        (!('broadQuestions' in data) || isBoundedString(data.broadQuestions, 0, 25000)) &&
+        (!('creativeQuestions' in data) || isBoundedString(data.creativeQuestions, 0, 15000)) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPdfResource(data) {
+      return isBoundedString(data.departmentId, 1, 128) &&
+        (!('departmentName' in data) || isBoundedString(data.departmentName, 0, 150)) &&
+        data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4 &&
+        isBoundedString(data.subjectName, 1, 200) &&
+        (!('courseCode' in data) || isBoundedString(data.courseCode, 0, 30)) &&
+        isBoundedString(data.title, 1, 250) &&
+        isBoundedString(data.category, 1, 80) &&
+        (!('description' in data) || isBoundedString(data.description, 0, 2000)) &&
+        (!('pdfUrl' in data) || isBoundedString(data.pdfUrl, 0, 1000)) &&
+        (!('localFileName' in data) || isBoundedString(data.localFileName, 0, 200)) &&
+        (!('coverImageUrl' in data) || isBoundedString(data.coverImageUrl, 0, 1000)) &&
+        (!('pageCount' in data) || (data.pageCount is int && data.pageCount >= 0)) &&
+        (!('fileSizeBytes' in data) || (data.fileSizeBytes is int && data.fileSizeBytes >= 0)) &&
+        (!('uploadedBy' in data) || isBoundedString(data.uploadedBy, 0, 128)) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidStudyQuestion(data) {
+      return isBoundedString(data.departmentId, 1, 128) &&
+        data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4 &&
+        (!('subjectId' in data) || isBoundedString(data.subjectId, 0, 128)) &&
+        isBoundedString(data.subjectName, 1, 200) &&
+        (!('courseCode' in data) || isBoundedString(data.courseCode, 0, 30)) &&
+        data.questionType in ['previous_year', 'suggestion', 'mcq'] &&
+        (!('examYear' in data) || isBoundedString(data.examYear, 0, 20)) &&
+        (!('partLabel' in data) || isBoundedString(data.partLabel, 0, 60)) &&
+        isBoundedString(data.prompt, 1, 4000) &&
+        (!('answerText' in data) || isBoundedString(data.answerText, 0, 20000)) &&
+        (!('options' in data) || (data.options is list && data.options.size() <= 6 && (data.options.size() == 0 || data.options[0] is string))) &&
+        (!('correctOptionIndex' in data) || (data.correctOptionIndex is int && data.correctOptionIndex >= 0 && data.correctOptionIndex <= 5)) &&
+        (!('explanation' in data) || isBoundedString(data.explanation, 0, 4000)) &&
+        (!('priority' in data) || isBoundedString(data.priority, 0, 40)) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidModelTest(data) {
+      return isBoundedString(data.departmentId, 1, 128) &&
+        data.yearNumber is int && data.yearNumber >= 1 && data.yearNumber <= 4 &&
+        (!('subjectId' in data) || isBoundedString(data.subjectId, 0, 128)) &&
+        (!('subjectName' in data) || isBoundedString(data.subjectName, 0, 200)) &&
+        isBoundedString(data.title, 1, 200) &&
+        data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 240 &&
+        (!('questionCount' in data) || (data.questionCount is int && data.questionCount >= 0 && data.questionCount <= 200)) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAnnouncement(data) {
+      return isBoundedString(data.title, 1, 200) &&
+        isBoundedString(data.body, 1, 4000) &&
+        (!('tag' in data) || isBoundedString(data.tag, 0, 50)) &&
+        (!('pinned' in data) || data.pinned is bool) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidUserReport(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        (!('reporterName' in data) || isBoundedString(data.reporterName, 0, 120)) &&
+        isBoundedString(data.targetType, 1, 60) &&
+        isBoundedString(data.targetId, 1, 150) &&
+        isBoundedString(data.reason, 1, 200) &&
+        (!('details' in data) || isBoundedString(data.details, 0, 2000)) &&
+        data.status in ['open', 'reviewed', 'resolved', 'dismissed'] &&
+        (!('adminNote' in data) || isBoundedString(data.adminNote, 0, 1000)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAdminLog(data) {
+      return data.adminUid is string && data.adminUid.size() <= 128 &&
+        (!('adminEmail' in data) || isBoundedString(data.adminEmail, 0, 160)) &&
+        isBoundedString(data.action, 1, 100) &&
+        isBoundedString(data.summary, 1, 500) &&
+        isValidTimestamp(data.createdAt);
+    }
+
+    // --- User Scoped Collections ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().keys().hasAll(['userId', 'displayName', 'selectedDepartmentId', 'selectedYear', 'createdAt', 'updatedAt']) &&
+        isValidUserProfile(incoming());
+      allow update: if isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidUserProfile(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName', 'email', 'photoUrl', 'selectedDepartmentId',
+          'selectedDepartmentName', 'selectedYear', 'languagePreference',
+          'savedAnswersCount', 'bookmarksCount', 'testsCompletedCount', 'updatedAt'
+        ]);
+      allow delete: if isOwner(userId) || isAdmin();
+
+      match /ai_answers/{answerId} {
+        allow get: if isValidId(userId) && isValidId(answerId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(userId) && isValidId(answerId) &&
+          incoming().userId == request.auth.uid &&
+          isValidSavedAiAnswer(incoming());
+        allow update: if isOwner(userId) &&
+          isValidId(userId) && isValidId(answerId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidSavedAiAnswer(incoming()) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['bookmarked', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(answerId) && isOwner(userId);
+      }
+
+      match /ai_conversations/{conversationId} {
+        allow get: if isValidId(userId) && isValidId(conversationId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(userId) && isValidId(conversationId) &&
+          incoming().userId == request.auth.uid &&
+          isValidAiConversation(incoming());
+        allow update: if isOwner(userId) &&
+          isValidId(userId) && isValidId(conversationId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidAiConversation(incoming()) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'lastMessage', 'messageCount', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(conversationId) && isOwner(userId);
+
+        match /messages/{messageId} {
+          allow get: if isValidId(userId) && isValidId(conversationId) && isValidId(messageId) && isOwner(userId);
+          allow list: if isValidId(userId) && isValidId(conversationId) && isOwner(userId);
+          allow create: if isOwner(userId) &&
+            isValidId(userId) && isValidId(conversationId) && isValidId(messageId) &&
+            incoming().userId == request.auth.uid &&
+            isValidAiMessage(incoming());
+          allow update: if false;
+          allow delete: if isValidId(userId) && isValidId(conversationId) && isValidId(messageId) && isOwner(userId);
+        }
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow get: if isValidId(userId) && isValidId(bookmarkId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(userId) && isValidId(bookmarkId) &&
+          incoming().userId == request.auth.uid &&
+          isValidBookmark(incoming());
+        allow update: if isOwner(userId) &&
+          isValidId(userId) && isValidId(bookmarkId) &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          isValidBookmark(incoming()) &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['title', 'subtitle', 'pageNumber', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(bookmarkId) && isOwner(userId);
+      }
+
+      match /model_test_results/{resultId} {
+        allow get: if isValidId(userId) && isValidId(resultId) && isOwner(userId);
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isOwner(userId) &&
+          isValidId(userId) && isValidId(resultId) &&
+          incoming().userId == request.auth.uid &&
+          isValidModelTestResult(incoming());
+        allow update: if false;
+        allow delete: if isValidId(userId) && isValidId(resultId) && isOwner(userId);
+      }
+    }
+
+    // --- Shared Academic Collections (Published read by signed-in students; writes strictly Admin-only) ---
+    match /departments/{departmentId} {
+      allow get: if isSignedIn() && isValidId(departmentId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(departmentId) && isValidDepartment(incoming());
+      allow update: if isAdmin() && isValidId(departmentId) && incoming().createdAt == existing().createdAt && isValidDepartment(incoming());
+      allow delete: if isAdmin() && isValidId(departmentId);
+    }
+
+    match /subjects/{subjectId} {
+      allow get: if isSignedIn() && isValidId(subjectId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(subjectId) && isValidSubject(incoming());
+      allow update: if isAdmin() && isValidId(subjectId) && incoming().createdAt == existing().createdAt && isValidSubject(incoming());
+      allow delete: if isAdmin() && isValidId(subjectId);
+    }
+
+    match /chapters/{chapterId} {
+      allow get: if isSignedIn() && isValidId(chapterId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(chapterId) && isValidChapter(incoming());
+      allow update: if isAdmin() && isValidId(chapterId) && incoming().createdAt == existing().createdAt && isValidChapter(incoming());
+      allow delete: if isAdmin() && isValidId(chapterId);
+    }
+
+    match /pdf_library/{pdfId} {
+      allow get: if isSignedIn() && isValidId(pdfId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(pdfId) && isValidPdfResource(incoming());
+      allow update: if isAdmin() && isValidId(pdfId) && incoming().createdAt == existing().createdAt && isValidPdfResource(incoming());
+      allow delete: if isAdmin() && isValidId(pdfId);
+    }
+
+    match /questions/{questionId} {
+      allow get: if isSignedIn() && isValidId(questionId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(questionId) && isValidStudyQuestion(incoming());
+      allow update: if isAdmin() && isValidId(questionId) && incoming().createdAt == existing().createdAt && isValidStudyQuestion(incoming());
+      allow delete: if isAdmin() && isValidId(questionId);
+    }
+
+    match /model_tests/{testId} {
+      allow get: if isSignedIn() && isValidId(testId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(testId) && isValidModelTest(incoming());
+      allow update: if isAdmin() && isValidId(testId) && incoming().createdAt == existing().createdAt && isValidModelTest(incoming());
+      allow delete: if isAdmin() && isValidId(testId);
+    }
+
+    match /announcements/{announcementId} {
+      allow get: if isSignedIn() && isValidId(announcementId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(announcementId) && isValidAnnouncement(incoming());
+      allow update: if isAdmin() && isValidId(announcementId) && incoming().createdAt == existing().createdAt && isValidAnnouncement(incoming());
+      allow delete: if isAdmin() && isValidId(announcementId);
+    }
+
+    // --- Admin, Settings, Reports & Audit Logs ---
+    match /admins/{adminUid} {
+      allow get: if isSignedIn() && isValidId(adminUid) && (request.auth.uid == adminUid || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow write: if isAdmin() && isValidId(adminUid);
+    }
+
+    match /app_settings/{settingId} {
+      allow get: if isSignedIn() && isValidId(settingId) && (settingId != 'admin_security' || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow write: if isAdmin() && isValidId(settingId);
+    }
+
+    match /user_reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(reportId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'open' &&
+        isValidUserReport(incoming());
+      allow update: if isAdmin() && isValidId(reportId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidUserReport(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(reportId);
+    }
+
+    match /admin_logs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isBootstrappedAdmin();
+      allow create: if isAdmin() && isValidId(logId) &&
+        incoming().adminUid == request.auth.uid &&
+        isValidAdminLog(incoming());
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "honours-solution-functions",
+  "version": "1.0.0",
+  "description": "Cloud Functions for Honours Solution (Admin PIN verification, role assignment, and moderation)",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.0"
+  }
+}
