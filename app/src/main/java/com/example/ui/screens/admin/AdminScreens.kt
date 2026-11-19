@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.School
@@ -263,7 +264,9 @@ fun AdminDashboardScreen(
     onNavigateAnnouncements: () -> Unit,
     onNavigateReports: () -> Unit,
     developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
-    onSaveDeveloperProfile: (DeveloperProfileConfig) -> Unit = {}
+    onSaveDeveloperProfile: (DeveloperProfileConfig) -> Unit = {},
+    pendingPurchasesCount: Int = 0,
+    onNavigateAiLimits: () -> Unit = {}
 ) {
     var modelName by remember(remoteConfig.modelName) { mutableStateOf(remoteConfig.modelName) }
     var sysInstructions by remember(remoteConfig.systemInstructions) { mutableStateOf(remoteConfig.systemInstructions) }
@@ -330,6 +333,15 @@ fun AdminDashboardScreen(
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             AdminActionCard("ঘোষণা / নোটিশ", Icons.Default.Campaign, onNavigateAnnouncements, Modifier.weight(1f), "admin_nav_announcements")
                             AdminActionCard("ইউজার রিপোর্ট ($openReportsCount)", Icons.Default.Flag, onNavigateReports, Modifier.weight(1f), "admin_nav_reports")
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            AdminActionCard(
+                                "AI লিমিট ও পেমেন্ট ($pendingPurchasesCount)",
+                                Icons.Default.Payments,
+                                onNavigateAiLimits,
+                                Modifier.weight(1f),
+                                "admin_nav_ai_limits"
+                            )
                         }
                         OutlinedButton(
                             onClick = onSeedCatalog,

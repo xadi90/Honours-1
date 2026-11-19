@@ -51,4 +51,5 @@ object AppRoutes {
     const val ADMIN_CONTENT_EDITOR = "admin_content_editor"
     const val ADMIN_ANNOUNCEMENTS = "admin_announcements"
     const val ADMIN_REPORTS = "admin_reports"
+    const val ADMIN_LIMIT_MANAGEMENT = "admin_limit_management"
 }

@@ -93,6 +93,7 @@ import com.example.core.PdfUtils
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AiConversation
 import com.example.data.model.AiMessage
+import com.example.data.model.AiQuotaState
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.AiTutorMode
 import com.example.data.model.AnswerLength
@@ -128,7 +129,9 @@ fun AiQuestionSolverScreen(
     onOpenAnswerDetails: (StructuredAiAnswer) -> Unit,
     onDeleteSavedAnswer: (String) -> Unit,
     onOpenAiChat: () -> Unit,
-    onOpenImageUploadScreen: () -> Unit
+    onOpenImageUploadScreen: () -> Unit,
+    aiQuotaState: AiQuotaState = AiQuotaState(),
+    onOpenBuyLimit: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -239,6 +242,13 @@ fun AiQuestionSolverScreen(
             }
         }
 
+        item {
+            AiQuotaBannerCard(
+                quota = aiQuotaState,
+                onBuyLimitClick = onOpenBuyLimit
+            )
+        }
+
         if (!isOnline) {
             item {
                 ErrorStateCard(
@@ -332,6 +342,7 @@ fun AiQuestionSolverScreen(
                                     PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                                 )
                             },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.weight(1f).testTag("pick_question_image_button")
                         ) {
                             Icon(Icons.Default.Image, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -346,6 +357,7 @@ fun AiQuestionSolverScreen(
                                 if (granted) launchCameraCapture()
                                 else cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
                             },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.weight(1f).testTag("capture_question_photo_button")
                         ) {
                             Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -354,6 +366,7 @@ fun AiQuestionSolverScreen(
                         }
                         OutlinedButton(
                             onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
                             modifier = Modifier.weight(1f).testTag("pick_question_pdf_button")
                         ) {
                             Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
@@ -511,7 +524,9 @@ fun QuestionImageUploadScreen(
     onBackClick: () -> Unit,
     onAttachImages: (List<Bitmap>) -> Unit,
     onClearImages: () -> Unit,
-    onSolveMultimodal: (notes: String, yearLabel: String, subjectName: String, answerLength: AnswerLength) -> Unit
+    onSolveMultimodal: (notes: String, yearLabel: String, subjectName: String, answerLength: AnswerLength) -> Unit,
+    aiQuotaState: AiQuotaState = AiQuotaState(),
+    onOpenBuyLimit: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -567,6 +582,10 @@ fun QuestionImageUploadScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            AiQuotaBannerCard(
+                quota = aiQuotaState,
+                onBuyLimitClick = onOpenBuyLimit
+            )
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
@@ -690,7 +709,9 @@ fun AiChatScreen(
     onBackClick: () -> Unit,
     onSelectConversation: (String?) -> Unit,
     onDeleteConversation: (String) -> Unit,
-    onSendMessage: (prompt: String, mode: AiTutorMode, yearLabel: String, yearNumber: Long, subjectName: String) -> Unit
+    onSendMessage: (prompt: String, mode: AiTutorMode, yearLabel: String, yearNumber: Long, subjectName: String) -> Unit,
+    aiQuotaState: AiQuotaState = AiQuotaState(),
+    onOpenBuyLimit: () -> Unit = {}
 ) {
     var inputText by remember(initialPrompt) { mutableStateOf(initialPrompt) }
     var selectedMode by remember { mutableStateOf(AiTutorMode.CHAT) }
@@ -736,6 +757,12 @@ fun AiChatScreen(
                 )
             }
         }
+
+        AiQuotaBannerCard(
+            quota = aiQuotaState,
+            onBuyLimitClick = onOpenBuyLimit,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+        )
 
         if (chatError != null) {
             ErrorStateCard(message = chatError, modifier = Modifier.padding(horizontal = 12.dp))

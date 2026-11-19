@@ -7,7 +7,10 @@ import com.example.core.handleFirestoreError
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AdminLog
 import com.example.data.model.AiConversation
+import com.example.data.model.AiLimitConfig
+import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiMessage
+import com.example.data.model.AiQuotaState
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
@@ -156,6 +159,9 @@ class FirestoreRepository(
                     "savedAnswersCount" to 0L,
                     "bookmarksCount" to 0L,
                     "testsCompletedCount" to 0L,
+                    "freeAiLimit" to 30L,
+                    "aiUsageCount" to 0L,
+                    "purchasedAiCredits" to 0L,
                     "createdAt" to FieldValue.serverTimestamp(),
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
@@ -572,6 +578,214 @@ class FirestoreRepository(
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.GET, "app_settings/version_info")
             emptyMap()
+        }
+    }
+
+    // --- AI Quota & Limit Purchase ---
+    fun observeAiLimitConfig(): Flow<AiLimitConfig> =
+        db.collection("app_settings").document("ai_limit_config")
+            .snapshots()
+            .map { snap ->
+                val defaults = AiLimitConfig()
+                if (!snap.exists()) defaults
+                else AiLimitConfig(
+                    freeLimit = (snap.getLong("freeLimit") ?: defaults.freeLimit).coerceIn(0L, 1000L),
+                    paymentPhone = snap.getString("paymentPhone")?.takeIf { it.isNotBlank() } ?: defaults.paymentPhone,
+                    paymentMethods = snap.getString("paymentMethods")?.takeIf { it.isNotBlank() } ?: defaults.paymentMethods,
+                    paymentNote = snap.getString("paymentNote")?.takeIf { it.isNotBlank() } ?: defaults.paymentNote,
+                    pack1Credits = (snap.getLong("pack1Credits") ?: defaults.pack1Credits).coerceAtLeast(1L),
+                    pack1PriceBdt = (snap.getLong("pack1PriceBdt") ?: defaults.pack1PriceBdt).coerceAtLeast(1L),
+                    pack2Credits = (snap.getLong("pack2Credits") ?: defaults.pack2Credits).coerceAtLeast(1L),
+                    pack2PriceBdt = (snap.getLong("pack2PriceBdt") ?: defaults.pack2PriceBdt).coerceAtLeast(1L),
+                    pack3Credits = (snap.getLong("pack3Credits") ?: defaults.pack3Credits).coerceAtLeast(1L),
+                    pack3PriceBdt = (snap.getLong("pack3PriceBdt") ?: defaults.pack3PriceBdt).coerceAtLeast(1L)
+                )
+            }
+
+    suspend fun saveAiLimitConfig(config: AiLimitConfig): Result<Unit> {
+        val path = "app_settings/ai_limit_config"
+        val defaults = AiLimitConfig()
+        return try {
+            requireUserId()
+            db.document(path).set(
+                mapOf(
+                    "freeLimit" to config.freeLimit.coerceIn(0L, 1000L),
+                    "paymentPhone" to config.paymentPhone.trim().ifBlank { defaults.paymentPhone }.take(40),
+                    "paymentMethods" to config.paymentMethods.trim().ifBlank { defaults.paymentMethods }.take(120),
+                    "paymentNote" to config.paymentNote.trim().ifBlank { defaults.paymentNote }.take(800),
+                    "pack1Credits" to config.pack1Credits.coerceIn(1L, 10000L),
+                    "pack1PriceBdt" to config.pack1PriceBdt.coerceIn(1L, 100000L),
+                    "pack2Credits" to config.pack2Credits.coerceIn(1L, 10000L),
+                    "pack2PriceBdt" to config.pack2PriceBdt.coerceIn(1L, 100000L),
+                    "pack3Credits" to config.pack3Credits.coerceIn(1L, 10000L),
+                    "pack3PriceBdt" to config.pack3PriceBdt.coerceIn(1L, 100000L),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+            logAdminAction("UPDATE_AI_LIMIT_CONFIG", "Free=${config.freeLimit}, Phone=${config.paymentPhone}")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun consumeAiCredit(userId: String): Result<AiQuotaState> {
+        val path = "users/$userId"
+        return try {
+            val uid = requireUserId()
+            check(uid == userId) { "User mismatch" }
+            ensureUserProfileExists()
+            val userRef = db.collection("users").document(userId)
+            val cfgRef = db.collection("app_settings").document("ai_limit_config")
+            val updatedQuota = db.runTransaction { tx ->
+                val userSnap = tx.get(userRef)
+                val cfgSnap = tx.get(cfgRef)
+                if (!userSnap.exists()) {
+                    throw IllegalStateException("ব্যবহারকারীর প্রোফাইল পাওয়া যায়নি।")
+                }
+                val freeLimit = (cfgSnap.getLong("freeLimit") ?: userSnap.getLong("freeAiLimit") ?: 30L).coerceAtLeast(0L)
+                val purchased = (userSnap.getLong("purchasedAiCredits") ?: 0L).coerceAtLeast(0L)
+                val used = (userSnap.getLong("aiUsageCount") ?: 0L).coerceAtLeast(0L)
+                if (used >= freeLimit + purchased) {
+                    throw IllegalStateException("আপনার AI লিমিট শেষ হয়ে গেছে। নতুন লিমিট কিনুন।")
+                }
+                val nextUsed = used + 1L
+                tx.update(
+                    userRef,
+                    mapOf(
+                        "aiUsageCount" to nextUsed,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                AiQuotaState(
+                    freeLimit = freeLimit,
+                    purchasedCredits = purchased,
+                    usedCount = nextUsed
+                )
+            }.await()
+            Result.success(updatedQuota)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun submitAiLimitPurchaseRequest(request: AiLimitPurchaseRequest): Result<String> {
+        val user = auth.currentUser
+            ?: return Result.failure(IllegalStateException("অনুগ্রহ করে আগে Google দিয়ে সাইন-ইন করুন।"))
+        val docRef = db.collection("ai_purchase_requests").document()
+        return try {
+            require(request.creditsAmount > 0L) { "প্যাকেজ নির্বাচন করুন।" }
+            require(request.senderNumber.trim().length >= 6) { "সঠিক পেমেন্ট নম্বর লিখুন।" }
+            require(request.transactionId.trim().length >= 4) { "সঠিক Transaction ID (TrxID) লিখুন।" }
+            docRef.set(
+                mapOf(
+                    "userId" to user.uid,
+                    "userName" to (user.displayName?.takeIf { it.isNotBlank() } ?: request.userName.ifBlank { "NU Student" }).take(120),
+                    "userEmail" to (user.email ?: request.userEmail).take(160),
+                    "packageTitle" to request.packageTitle.trim().take(120),
+                    "creditsAmount" to request.creditsAmount.coerceIn(1L, 10000L),
+                    "priceBdt" to request.priceBdt.coerceIn(0L, 100000L),
+                    "paymentMethod" to request.paymentMethod.take(40),
+                    "senderNumber" to request.senderNumber.trim().take(40),
+                    "transactionId" to request.transactionId.trim().take(80),
+                    "status" to "pending",
+                    "adminNote" to "",
+                    "createdAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(docRef.id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    fun observeUserPurchaseRequests(userId: String): Flow<List<AiLimitPurchaseRequest>> =
+        db.collection("ai_purchase_requests")
+            .whereEqualTo("userId", userId)
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(AiLimitPurchaseRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedByDescending { it.createdAt?.seconds ?: 0L }
+            }
+
+    fun observeAllPurchaseRequestsForAdmin(): Flow<List<AiLimitPurchaseRequest>> =
+        db.collection("ai_purchase_requests")
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(AiLimitPurchaseRequest::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedWith(
+                        compareBy<AiLimitPurchaseRequest> { it.status != "pending" }
+                            .thenByDescending { it.createdAt?.seconds ?: 0L }
+                    )
+            }
+
+    suspend fun reviewAiLimitPurchaseRequest(
+        requestId: String,
+        approve: Boolean,
+        adminNote: String
+    ): Result<Unit> {
+        val reqRef = db.collection("ai_purchase_requests").document(requestId)
+        return try {
+            requireUserId()
+            val summaryInfo = db.runTransaction { tx ->
+                val reqSnap = tx.get(reqRef)
+                if (!reqSnap.exists()) {
+                    throw IllegalStateException("পেমেন্ট রিকোয়েস্টটি পাওয়া যায়নি।")
+                }
+                val currentStatus = reqSnap.getString("status") ?: "pending"
+                if (currentStatus != "pending") {
+                    throw IllegalStateException("এই রিকোয়েস্টটি ইতিমধ্যেই $currentStatus অবস্থায় রয়েছে।")
+                }
+                val targetUid = reqSnap.getString("userId").orEmpty()
+                val creditsAmount = (reqSnap.getLong("creditsAmount") ?: 0L).coerceAtLeast(0L)
+                val targetEmail = reqSnap.getString("userEmail").orEmpty()
+                val trxId = reqSnap.getString("transactionId").orEmpty()
+
+                val userRef = db.collection("users").document(targetUid)
+                val userSnap = if (approve && targetUid.isNotBlank()) tx.get(userRef) else null
+
+                tx.update(
+                    reqRef,
+                    mapOf(
+                        "status" to if (approve) "approved" else "rejected",
+                        "adminNote" to adminNote.trim().take(500),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+
+                if (approve) {
+                    if (userSnap == null || !userSnap.exists()) {
+                        throw IllegalStateException("শিক্ষার্থীর প্রোফাইল ডকুমেন্ট পাওয়া যায়নি।")
+                    }
+                    val currentPurchased = (userSnap.getLong("purchasedAiCredits") ?: 0L).coerceAtLeast(0L)
+                    tx.update(
+                        userRef,
+                        mapOf(
+                            "purchasedAiCredits" to (currentPurchased + creditsAmount),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    )
+                }
+                "${if (approve) "Approved" else "Rejected"} +$creditsAmount AI credits for $targetEmail (Trx: $trxId)"
+            }.await()
+            logAdminAction("REVIEW_AI_PURCHASE", summaryInfo)
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, reqRef.path)
+            Result.failure(e)
         }
     }
 

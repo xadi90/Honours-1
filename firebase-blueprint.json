@@ -16,6 +16,9 @@
         "savedAnswersCount": { "type": "integer" },
         "bookmarksCount": { "type": "integer" },
         "testsCompletedCount": { "type": "integer" },
+        "freeAiLimit": { "type": "integer" },
+        "aiUsageCount": { "type": "integer" },
+        "purchasedAiCredits": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -279,6 +282,27 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["adminUid", "action", "summary", "createdAt"]
+    },
+    "AiLimitPurchaseRequest": {
+      "title": "AiLimitPurchaseRequest",
+      "description": "Student purchase request to buy extra AI question-solving credits",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "packageTitle": { "type": "string" },
+        "creditsAmount": { "type": "integer" },
+        "priceBdt": { "type": "integer" },
+        "paymentMethod": { "type": "string", "enum": ["bKash", "Nagad", "Rocket"] },
+        "senderNumber": { "type": "string" },
+        "transactionId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "adminNote": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "packageTitle", "creditsAmount", "priceBdt", "paymentMethod", "senderNumber", "transactionId", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -341,6 +365,10 @@
     "/admin_logs/{logId}": {
       "schema": { "$ref": "#/entities/AdminLog" },
       "description": "Admin activity log"
+    },
+    "/ai_purchase_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/AiLimitPurchaseRequest" },
+      "description": "Student AI limit purchase requests and admin verification status"
     }
   }
 }

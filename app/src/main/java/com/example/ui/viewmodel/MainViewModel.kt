@@ -10,6 +10,8 @@ import com.example.core.PreferencesManager
 import com.example.core.UpdateChecker
 import com.example.core.toUserFriendlyFirestoreMessage
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AiLimitConfig
+import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
@@ -96,6 +98,21 @@ class MainViewModel(
             emit(DeveloperProfileConfig())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), DeveloperProfileConfig())
+
+    val aiLimitConfig: StateFlow<AiLimitConfig> = firestoreRepo.observeAiLimitConfig()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "ai_limit_config")
+            emit(AiLimitConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AiLimitConfig())
+
+    val myPurchaseRequests: StateFlow<List<AiLimitPurchaseRequest>> =
+        firestoreRepo.observeUserPurchaseRequests(currentUserId)
+            .catch { error ->
+                unwrapFirestoreErrorOrThrow(error, "ai_purchase_requests")
+                emit(emptyList())
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     private val _isAdmin = MutableStateFlow(firestoreRepo.isBootstrappedAdminUser())
     val isAdmin: StateFlow<Boolean> = _isAdmin.asStateFlow()
@@ -213,6 +230,38 @@ class MainViewModel(
             firestoreRepo.submitUserReport(targetType, targetId, reason, details)
                 .onSuccess { _actionMessage.value = "Report submitted. Thank you for helping verify accuracy!" }
                 .onFailure { _actionMessage.value = it.toUserFriendlyFirestoreMessage("Could not submit report.") }
+        }
+    }
+
+    fun submitAiLimitPurchaseRequest(
+        packageTitle: String,
+        creditsAmount: Long,
+        priceBdt: Long,
+        paymentMethod: String,
+        senderNumber: String,
+        transactionId: String,
+        onSuccess: () -> Unit = {}
+    ) {
+        val profile = (userProfile.value as? UiState.Success)?.data
+        viewModelScope.launch {
+            firestoreRepo.submitAiLimitPurchaseRequest(
+                AiLimitPurchaseRequest(
+                    userId = currentUserId,
+                    userName = profile?.displayName.orEmpty(),
+                    userEmail = profile?.email.orEmpty(),
+                    packageTitle = packageTitle,
+                    creditsAmount = creditsAmount,
+                    priceBdt = priceBdt,
+                    paymentMethod = paymentMethod,
+                    senderNumber = senderNumber,
+                    transactionId = transactionId
+                )
+            ).onSuccess {
+                _actionMessage.value = "লিমিট কেনার রিকোয়েস্ট জমা হয়েছে! অ্যাডমিন যাচাই করে শীঘ্রই ক্রেডিট যোগ করে দেবেন।"
+                onSuccess()
+            }.onFailure { err ->
+                _actionMessage.value = err.toUserFriendlyFirestoreMessage("লিমিট কেনার রিকোয়েস্ট পাঠানো যায়নি।")
+            }
         }
     }
 

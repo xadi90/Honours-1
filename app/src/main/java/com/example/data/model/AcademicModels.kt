@@ -3,6 +3,7 @@ package com.example.data.model
 import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.Exclude
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
@@ -21,9 +22,20 @@ data class UserProfile(
     val savedAnswersCount: Long = 0L,
     val bookmarksCount: Long = 0L,
     val testsCompletedCount: Long = 0L,
+    val freeAiLimit: Long = 30L,
+    val aiUsageCount: Long = 0L,
+    val purchasedAiCredits: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
-)
+) {
+    @get:Exclude
+    val totalAiLimit: Long
+        get() = (freeAiLimit.coerceAtLeast(0L) + purchasedAiCredits.coerceAtLeast(0L))
+
+    @get:Exclude
+    val remainingAiCredits: Long
+        get() = (totalAiLimit - aiUsageCount.coerceAtLeast(0L)).coerceAtLeast(0L)
+}
 
 @Keep
 @IgnoreExtraProperties
@@ -219,5 +231,62 @@ data class DeveloperProfileConfig(
     val email: String = "xadiahmed23@gmail.com",
     val websiteUrl: String = "https://honours-solution.pages.dev",
     val websiteLabel: String = "Official Website (Cloudflare Pages)"
+)
+
+data class AiQuotaState(
+    val freeLimit: Long = 30L,
+    val purchasedCredits: Long = 0L,
+    val usedCount: Long = 0L
+) {
+    val totalCredits: Long get() = freeLimit.coerceAtLeast(0L) + purchasedCredits.coerceAtLeast(0L)
+    val remainingCredits: Long get() = (totalCredits - usedCount.coerceAtLeast(0L)).coerceAtLeast(0L)
+}
+
+data class AiLimitPackage(
+    val id: String,
+    val titleBn: String,
+    val credits: Long,
+    val priceBdt: Long,
+    val badge: String = ""
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AiLimitConfig(
+    val freeLimit: Long = 30L,
+    val paymentPhone: String = "01878864913",
+    val paymentMethods: String = "bKash / Nagad / Rocket (Personal)",
+    val paymentNote: String = "উপরের নম্বরে Send Money করে নিচে আপনার পেমেন্ট নম্বর ও Transaction ID (TrxID) জমা দিন। অ্যাডমিন যাচাই করে সাথে সাথেই আপনার একাউন্টে লিমিট যোগ করে দেবেন।",
+    val pack1Credits: Long = 50L,
+    val pack1PriceBdt: Long = 50L,
+    val pack2Credits: Long = 150L,
+    val pack2PriceBdt: Long = 120L,
+    val pack3Credits: Long = 500L,
+    val pack3PriceBdt: Long = 300L
+) {
+    fun packages(): List<AiLimitPackage> = listOf(
+        AiLimitPackage("pack_1", "স্টার্টার প্যাক (+${pack1Credits} AI লিমিট)", pack1Credits, pack1PriceBdt, "জনপ্রিয়"),
+        AiLimitPackage("pack_2", "এক্সাম প্রো প্যাক (+${pack2Credits} AI লিমিট)", pack2Credits, pack2PriceBdt, "সাশ্রয়ী"),
+        AiLimitPackage("pack_3", "অনার্স মাস্টার প্যাক (+${pack3Credits} AI লিমিট)", pack3Credits, pack3PriceBdt, "সেরা ভ্যালু")
+    )
+}
+
+@Keep
+@IgnoreExtraProperties
+data class AiLimitPurchaseRequest(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val userName: String = "",
+    val userEmail: String = "",
+    val packageTitle: String = "",
+    val creditsAmount: Long = 0L,
+    val priceBdt: Long = 0L,
+    val paymentMethod: String = "bKash",
+    val senderNumber: String = "",
+    val transactionId: String = "",
+    val status: String = "pending", // pending | approved | rejected
+    val adminNote: String = "",
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
 )
 

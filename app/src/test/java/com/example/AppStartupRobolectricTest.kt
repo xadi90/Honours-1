@@ -5,9 +5,15 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AiLimitConfig
+import com.example.data.model.AiQuotaState
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.DeveloperProfileConfig
+import com.example.data.model.UiState
+import com.example.ui.screens.admin.AdminAiLimitScreen
 import com.example.ui.screens.admin.AdminDashboardScreen
+import com.example.ui.screens.ai.AiLimitPurchaseSheet
+import com.example.ui.screens.ai.AiQuotaBannerCard
 import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.home.HomeDashboardScreen
 import com.example.ui.screens.profile.AboutDeveloperScreen
@@ -131,7 +137,57 @@ class HomeAndFallbackRobolectricTest {
                     onNavigateAnnouncements = {},
                     onNavigateReports = {},
                     developerProfile = DeveloperProfileConfig(),
-                    onSaveDeveloperProfile = {}
+                    onSaveDeveloperProfile = {},
+                    pendingPurchasesCount = 2,
+                    onNavigateAiLimits = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("admin_nav_ai_limits").assertExists()
+    }
+
+    @Test
+    fun `ai quota banner renders cleanly`() {
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AiQuotaBannerCard(
+                    quota = AiQuotaState(freeLimit = 30L, purchasedCredits = 0L, usedCount = 10L),
+                    onBuyLimitClick = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("buy_ai_limit_button").assertExists()
+    }
+
+    @Test
+    fun `ai limit purchase sheet renders cleanly`() {
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AiLimitPurchaseSheet(
+                    quota = AiQuotaState(freeLimit = 30L, purchasedCredits = 0L, usedCount = 30L),
+                    config = AiLimitConfig(),
+                    myRequests = emptyList(),
+                    onDismiss = {},
+                    onSubmitRequest = { _, _, _, _, _, _ -> }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("ai_package_pack_1").assertExists()
+    }
+
+    @Test
+    fun `admin limit manager renders cleanly`() {
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AdminAiLimitScreen(
+                    config = AiLimitConfig(),
+                    purchaseRequestsState = UiState.Success(emptyList()),
+                    onBack = {},
+                    onSaveConfig = {},
+                    onReviewRequest = { _, _, _ -> }
                 )
             }
         }

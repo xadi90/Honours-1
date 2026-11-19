@@ -81,6 +81,7 @@ import com.example.data.model.UiState
 import com.example.data.repository.AiRepository
 import com.example.data.repository.FirestoreRepository
 import com.example.ui.components.OfflineStatusBanner
+import com.example.ui.screens.admin.AdminAiLimitScreen
 import com.example.ui.screens.admin.AdminAnnouncementScreen
 import com.example.ui.screens.admin.AdminContentEditorScreen
 import com.example.ui.screens.admin.AdminDashboardScreen
@@ -88,6 +89,7 @@ import com.example.ui.screens.admin.AdminPasswordScreen
 import com.example.ui.screens.admin.AdminPdfUploadScreen
 import com.example.ui.screens.admin.AdminReportScreen
 import com.example.ui.screens.ai.AiChatScreen
+import com.example.ui.screens.ai.AiLimitPurchaseSheet
 import com.example.ui.screens.ai.AiQuestionSolverScreen
 import com.example.ui.screens.ai.AnswerDetailsScreen
 import com.example.ui.screens.ai.QuestionImageUploadScreen
@@ -267,6 +269,8 @@ private fun MainAuthenticatedShell(
     val announcements by mainViewModel.announcements.collectAsStateWithLifecycle()
     val aiRemoteConfig by mainViewModel.aiRemoteConfig.collectAsStateWithLifecycle()
     val developerProfile by mainViewModel.developerProfile.collectAsStateWithLifecycle()
+    val aiLimitConfig by mainViewModel.aiLimitConfig.collectAsStateWithLifecycle()
+    val myPurchaseRequests by mainViewModel.myPurchaseRequests.collectAsStateWithLifecycle()
     val isBackendAdmin by mainViewModel.isAdmin.collectAsStateWithLifecycle()
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val mainActionMsg by mainViewModel.actionMessage.collectAsStateWithLifecycle()
@@ -290,6 +294,8 @@ private fun MainAuthenticatedShell(
     val isChatStreaming by aiViewModel.isChatStreaming.collectAsStateWithLifecycle()
     val chatError by aiViewModel.chatError.collectAsStateWithLifecycle()
     val generatedMcqsState by aiViewModel.generatedMcqs.collectAsStateWithLifecycle()
+    val aiQuotaState by aiViewModel.aiQuotaState.collectAsStateWithLifecycle()
+    val showBuyLimitPrompt by aiViewModel.showBuyLimitPrompt.collectAsStateWithLifecycle()
     val aiStatusBanner by aiViewModel.statusBanner.collectAsStateWithLifecycle()
 
     val lockoutState by adminViewModel.lockoutState.collectAsStateWithLifecycle()
@@ -724,7 +730,9 @@ private fun MainAuthenticatedShell(
                             },
                             onDeleteSavedAnswer = { aiViewModel.deleteSavedAnswer(it) },
                             onOpenAiChat = { navController.navigate(AppRoutes.AI_CHAT) },
-                            onOpenImageUploadScreen = { navController.navigate(AppRoutes.QUESTION_IMAGE_UPLOAD) }
+                            onOpenImageUploadScreen = { navController.navigate(AppRoutes.QUESTION_IMAGE_UPLOAD) },
+                            aiQuotaState = aiQuotaState,
+                            onOpenBuyLimit = { aiViewModel.requestOpenBuyLimit() }
                         )
                     }
 
@@ -747,7 +755,9 @@ private fun MainAuthenticatedShell(
                                     remoteConfig = aiRemoteConfig,
                                     onSolved = { navController.navigate(AppRoutes.ANSWER_DETAILS) }
                                 )
-                            }
+                            },
+                            aiQuotaState = aiQuotaState,
+                            onOpenBuyLimit = { aiViewModel.requestOpenBuyLimit() }
                         )
                     }
 
@@ -773,7 +783,9 @@ private fun MainAuthenticatedShell(
                                     subjectName = subjName,
                                     remoteConfig = aiRemoteConfig
                                 )
-                            }
+                            },
+                            aiQuotaState = aiQuotaState,
+                            onOpenBuyLimit = { aiViewModel.requestOpenBuyLimit() }
                         )
                     }
 
@@ -899,7 +911,9 @@ private fun MainAuthenticatedShell(
                             onBack = { navController.popBackStack() },
                             onGenerateAiMcqs = { topic, yrLabel, count, lang, cfg ->
                                 aiViewModel.generateMcqs(topic, yrLabel, count, lang, cfg)
-                            }
+                            },
+                            aiQuotaState = aiQuotaState,
+                            onOpenBuyLimit = { aiViewModel.requestOpenBuyLimit() }
                         )
                     }
 
@@ -945,7 +959,9 @@ private fun MainAuthenticatedShell(
                             onSignOut = {
                                 signOut(credentialManager, scope)
                             },
-                            developerProfile = developerProfile
+                            developerProfile = developerProfile,
+                            aiQuotaState = aiQuotaState,
+                            onOpenBuyLimit = { aiViewModel.requestOpenBuyLimit() }
                         )
                     }
 
@@ -996,8 +1012,10 @@ private fun MainAuthenticatedShell(
                             }
                         }
                         val reportsState by adminViewModel.reports.collectAsStateWithLifecycle()
+                        val purchaseRequestsState by adminViewModel.purchaseRequests.collectAsStateWithLifecycle()
                         val adminLogs by adminViewModel.adminLogs.collectAsStateWithLifecycle()
                         val openReportsCount = (reportsState as? UiState.Success)?.data?.count { it.status == "open" } ?: 0
+                        val pendingPurchasesCount = (purchaseRequestsState as? UiState.Success)?.data?.count { it.status == "pending" } ?: 0
                         AdminDashboardScreen(
                             departmentsCount = departments.size,
                             subjectsCount = subjects.size,
@@ -1017,7 +1035,9 @@ private fun MainAuthenticatedShell(
                             onNavigateAnnouncements = { navController.navigate(AppRoutes.ADMIN_ANNOUNCEMENTS) },
                             onNavigateReports = { navController.navigate(AppRoutes.ADMIN_REPORTS) },
                             developerProfile = developerProfile,
-                            onSaveDeveloperProfile = { adminViewModel.saveDeveloperProfile(it) }
+                            onSaveDeveloperProfile = { adminViewModel.saveDeveloperProfile(it) },
+                            pendingPurchasesCount = pendingPurchasesCount,
+                            onNavigateAiLimits = { navController.navigate(AppRoutes.ADMIN_LIMIT_MANAGEMENT) }
                         )
                     }
 
@@ -1064,8 +1084,41 @@ private fun MainAuthenticatedShell(
                             onUpdateReport = { id, st, note -> adminViewModel.updateReportStatus(id, st, note) }
                         )
                     }
+
+                    composable(AppRoutes.ADMIN_LIMIT_MANAGEMENT) {
+                        val limitConfig by adminViewModel.aiLimitConfig.collectAsStateWithLifecycle()
+                        val purchaseRequestsState by adminViewModel.purchaseRequests.collectAsStateWithLifecycle()
+                        AdminAiLimitScreen(
+                            config = limitConfig,
+                            purchaseRequestsState = purchaseRequestsState,
+                            onBack = { navController.popBackStack() },
+                            onSaveConfig = { adminViewModel.saveAiLimitConfig(it) },
+                            onReviewRequest = { id, approve, note ->
+                                adminViewModel.reviewPurchaseRequest(id, approve, note)
+                            }
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (showBuyLimitPrompt) {
+        AiLimitPurchaseSheet(
+            quota = aiQuotaState,
+            config = aiLimitConfig,
+            myRequests = myPurchaseRequests,
+            onDismiss = { aiViewModel.dismissBuyLimitPrompt() },
+            onSubmitRequest = { pkgTitle, credits, price, method, sender, trx ->
+                mainViewModel.submitAiLimitPurchaseRequest(
+                    packageTitle = pkgTitle,
+                    creditsAmount = credits,
+                    priceBdt = price,
+                    paymentMethod = method,
+                    senderNumber = sender,
+                    transactionId = trx
+                )
+            }
+        )
     }
 }

@@ -8,7 +8,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.core.PdfUtils
 import com.example.core.toUserFriendlyFirestoreMessage
 import com.example.data.model.AiConversation
+import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiMessage
+import com.example.data.model.AiQuotaState
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.AiTutorMode
 import com.example.data.model.AnswerLength
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -106,11 +109,47 @@ class AiViewModel(
     private val _generatedMcqs = MutableStateFlow<UiState<List<GeneratedMcqItem>>>(UiState.Idle)
     val generatedMcqs: StateFlow<UiState<List<GeneratedMcqItem>>> = _generatedMcqs.asStateFlow()
 
+    val aiQuotaState: StateFlow<AiQuotaState> = combine(
+        firestoreRepo.observeUserProfile(currentUserId)
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(null)
+            },
+        firestoreRepo.observeAiLimitConfig()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(AiLimitConfig())
+            }
+    ) { profile, config ->
+        AiQuotaState(
+            freeLimit = config.freeLimit,
+            purchasedCredits = profile?.purchasedAiCredits ?: 0L,
+            usedCount = profile?.aiUsageCount ?: 0L
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AiQuotaState())
+
+    private val _showBuyLimitPrompt = MutableStateFlow(false)
+    val showBuyLimitPrompt: StateFlow<Boolean> = _showBuyLimitPrompt.asStateFlow()
+
     private val _statusBanner = MutableStateFlow<String?>(null)
     val statusBanner: StateFlow<String?> = _statusBanner.asStateFlow()
 
     fun clearStatusBanner() {
         _statusBanner.value = null
+    }
+
+    fun requestOpenBuyLimit() {
+        _showBuyLimitPrompt.value = true
+    }
+
+    fun dismissBuyLimitPrompt() {
+        _showBuyLimitPrompt.value = false
     }
 
     fun attachBitmap(bitmap: Bitmap) {
@@ -150,6 +189,12 @@ class AiViewModel(
             _solveState.value = UiState.Error("Please type a question or attach an image/PDF.")
             return
         }
+        val quota = aiQuotaState.value
+        if (quota.remainingCredits <= 0L) {
+            _solveState.value = UiState.Error("আপনার ফ্রী ${quota.freeLimit}টি AI লিমিট শেষ হয়ে গেছে। আরও সমাধান পেতে নতুন লিমিট কিনুন।")
+            _showBuyLimitPrompt.value = true
+            return
+        }
 
         viewModelScope.launch {
             _solveState.value = UiState.Loading
@@ -164,6 +209,15 @@ class AiViewModel(
                 remoteConfig = remoteConfig
             )
             result.onSuccess { generated ->
+                val consumeRes = firestoreRepo.consumeAiCredit(currentUserId)
+                if (consumeRes.isFailure) {
+                    val errMsg = consumeRes.exceptionOrNull()?.localizedMessage.orEmpty()
+                    if (errMsg.contains("লিমিট শেষ", ignoreCase = true) || errMsg.contains("PERMISSION_DENIED", ignoreCase = true)) {
+                        _solveState.value = UiState.Error("আপনার AI লিমিট শেষ হয়ে গেছে। নতুন লিমিট কিনুন।")
+                        _showBuyLimitPrompt.value = true
+                        return@onSuccess
+                    }
+                }
                 val saveRes = firestoreRepo.saveAiAnswer(generated)
                 val persisted = saveRes.getOrNull()?.let { docId -> generated.copy(id = docId) } ?: generated
                 _selectedAnswer.value = persisted
@@ -239,6 +293,12 @@ class AiViewModel(
             _chatError.value = remoteConfig.maintenanceMessage.ifBlank { "AI Tutor is under maintenance." }
             return
         }
+        val quota = aiQuotaState.value
+        if (quota.remainingCredits <= 0L) {
+            _chatError.value = "আপনার ফ্রী ${quota.freeLimit}টি AI লিমিট শেষ হয়ে গেছে। নতুন লিমিট কিনুন।"
+            _showBuyLimitPrompt.value = true
+            return
+        }
 
         viewModelScope.launch {
             _chatError.value = null
@@ -275,6 +335,7 @@ class AiViewModel(
 
                 if (finalReply.isNotBlank()) {
                     firestoreRepo.appendConversationMessage(convId, "model", finalReply)
+                    firestoreRepo.consumeAiCredit(currentUserId)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -306,10 +367,17 @@ class AiViewModel(
         language: String = "bn",
         remoteConfig: AiRemoteConfig
     ) {
+        val quota = aiQuotaState.value
+        if (quota.remainingCredits <= 0L) {
+            _generatedMcqs.value = UiState.Error("আপনার ফ্রী ${quota.freeLimit}টি AI লিমিট শেষ হয়ে গেছে। আরও MCQ তৈরি করতে নতুন লিমিট কিনুন।")
+            _showBuyLimitPrompt.value = true
+            return
+        }
         viewModelScope.launch {
             _generatedMcqs.value = UiState.Loading
             val res = aiRepo.generateMcqsStructured(topicOrSubject, yearLabel, count, language, remoteConfig)
             res.onSuccess { items ->
+                firestoreRepo.consumeAiCredit(currentUserId)
                 _generatedMcqs.value = UiState.Success(items)
             }.onFailure { err ->
                 _generatedMcqs.value = UiState.Error(err.localizedMessage ?: "Failed to generate MCQs.")

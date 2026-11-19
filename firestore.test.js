@@ -244,3 +244,165 @@ test("Admin security settings & user reports isolation", async () => {
     })
   );
 });
+
+test("AI quota: +1 consumption within 30 free limit, tamper prevention, and purchase approval", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@example.com",
+    email_verified: true,
+  }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", {
+    email: ADMIN_EMAIL,
+    email_verified: true,
+  }).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  // Student cannot spoof initial credits on profile creation
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Ayesha",
+      selectedDepartmentId: "political_science",
+      selectedYear: 1,
+      freeAiLimit: 999,
+      aiUsageCount: 0,
+      purchasedAiCredits: 500,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Valid creation with 30 free limit
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Ayesha",
+      selectedDepartmentId: "political_science",
+      selectedYear: 1,
+      freeAiLimit: 30,
+      aiUsageCount: 0,
+      purchasedAiCredits: 0,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Valid +1 increment succeeds
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      aiUsageCount: 1,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Jumping by +2 fails
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      aiUsageCount: 3,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Student cannot modify own purchasedAiCredits or freeAiLimit
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      purchasedAiCredits: 100,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Simulate user hitting full 30 free limit via security rules bypass
+  await testEnv.withSecurityRulesDisabled(async (ctx) => {
+    await ctx.firestore().collection("users").doc(ALICE_UID).update({
+      aiUsageCount: 30,
+    });
+  });
+
+  // 31st request blocked when remaining credits == 0
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      aiUsageCount: 31,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Student submits purchase request (pending only)
+  await assertFails(
+    aliceDb.collection("ai_purchase_requests").doc("req_bad").set({
+      userId: ALICE_UID,
+      packageTitle: "Starter Pack",
+      creditsAmount: 50,
+      priceBdt: 50,
+      paymentMethod: "bKash",
+      senderNumber: "01711000000",
+      transactionId: "TRX12345",
+      status: "approved",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  await assertSucceeds(
+    aliceDb.collection("ai_purchase_requests").doc("req_1").set({
+      userId: ALICE_UID,
+      userName: "Ayesha",
+      userEmail: "alice@example.com",
+      packageTitle: "Starter Pack (+50)",
+      creditsAmount: 50,
+      priceBdt: 50,
+      paymentMethod: "bKash",
+      senderNumber: "01711000000",
+      transactionId: "TRX987654",
+      status: "pending",
+      adminNote: "",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Filtered own query succeeds; unfiltered list fails for students
+  await assertSucceeds(
+    aliceDb.collection("ai_purchase_requests").where("userId", "==", ALICE_UID).get()
+  );
+  await assertFails(aliceDb.collection("ai_purchase_requests").get());
+  await assertFails(bobDb.collection("ai_purchase_requests").doc("req_1").get());
+
+  // Student cannot self-approve
+  await assertFails(
+    aliceDb.collection("ai_purchase_requests").doc("req_1").update({
+      status: "approved",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Admin approves request & grants +50 purchased credits
+  await assertSucceeds(
+    adminDb.collection("ai_purchase_requests").doc("req_1").update({
+      status: "approved",
+      adminNote: "Verified bKash Trx",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertSucceeds(
+    adminDb.collection("users").doc(ALICE_UID).update({
+      purchasedAiCredits: 50,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Double-approval fails
+  await assertFails(
+    adminDb.collection("ai_purchase_requests").doc("req_1").update({
+      status: "approved",
+      updatedAt: new Date(Date.now() - 400),
+    })
+  );
+
+  // Now student can use the 31st AI credit!
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      aiUsageCount: 31,
+      updatedAt: new Date(Date.now() - 300),
+    })
+  );
+});

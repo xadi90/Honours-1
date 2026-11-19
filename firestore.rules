@@ -65,8 +65,25 @@ service cloud.firestore {
         (!('savedAnswersCount' in data) || (data.savedAnswersCount is int && data.savedAnswersCount >= 0)) &&
         (!('bookmarksCount' in data) || (data.bookmarksCount is int && data.bookmarksCount >= 0)) &&
         (!('testsCompletedCount' in data) || (data.testsCompletedCount is int && data.testsCompletedCount >= 0)) &&
+        (!('freeAiLimit' in data) || (data.freeAiLimit is int && data.freeAiLimit >= 0 && data.freeAiLimit <= 1000)) &&
+        (!('aiUsageCount' in data) || (data.aiUsageCount is int && data.aiUsageCount >= 0)) &&
+        (!('purchasedAiCredits' in data) || (data.purchasedAiCredits is int && data.purchasedAiCredits >= 0)) &&
         isValidTimestamp(data.createdAt) &&
         isValidTimestamp(data.updatedAt);
+    }
+
+    function effectiveUserFreeLimit(data) {
+      return exists(/databases/$(database)/documents/app_settings/ai_limit_config) &&
+        ('freeLimit' in get(/databases/$(database)/documents/app_settings/ai_limit_config).data) &&
+        get(/databases/$(database)/documents/app_settings/ai_limit_config).data.freeLimit is int
+        ? get(/databases/$(database)/documents/app_settings/ai_limit_config).data.freeLimit
+        : (('freeAiLimit' in data && data.freeAiLimit is int) ? data.freeAiLimit : 30);
+    }
+
+    function isValidAiUsageIncrement() {
+      return incoming().aiUsageCount is int &&
+        incoming().aiUsageCount == ((('aiUsageCount' in existing() && existing().aiUsageCount is int) ? existing().aiUsageCount : 0) + 1) &&
+        incoming().aiUsageCount <= (effectiveUserFreeLimit(existing()) + (('purchasedAiCredits' in existing() && existing().purchasedAiCredits is int) ? existing().purchasedAiCredits : 0));
     }
 
     function isValidSavedAiAnswer(data) {
@@ -258,6 +275,22 @@ service cloud.firestore {
         isValidTimestamp(data.createdAt);
     }
 
+    function isValidAiPurchaseRequest(data) {
+      return data.userId is string && data.userId.size() <= 128 &&
+        (!('userName' in data) || isBoundedString(data.userName, 0, 120)) &&
+        (!('userEmail' in data) || isBoundedString(data.userEmail, 0, 160)) &&
+        isBoundedString(data.packageTitle, 1, 120) &&
+        data.creditsAmount is int && data.creditsAmount >= 1 && data.creditsAmount <= 10000 &&
+        data.priceBdt is int && data.priceBdt >= 0 && data.priceBdt <= 100000 &&
+        data.paymentMethod in ['bKash', 'Nagad', 'Rocket'] &&
+        isBoundedString(data.senderNumber, 6, 40) &&
+        isBoundedString(data.transactionId, 4, 80) &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('adminNote' in data) || isBoundedString(data.adminNote, 0, 500)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
     // --- User Scoped Collections ---
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
@@ -266,17 +299,32 @@ service cloud.firestore {
         isValidId(userId) &&
         incoming().userId == request.auth.uid &&
         incoming().keys().hasAll(['userId', 'displayName', 'selectedDepartmentId', 'selectedYear', 'createdAt', 'updatedAt']) &&
+        (!('freeAiLimit' in incoming()) || incoming().freeAiLimit == 30) &&
+        (!('aiUsageCount' in incoming()) || incoming().aiUsageCount == 0) &&
+        (!('purchasedAiCredits' in incoming()) || incoming().purchasedAiCredits == 0) &&
         isValidUserProfile(incoming());
-      allow update: if isOwner(userId) &&
-        isValidId(userId) &&
+      allow update: if isValidId(userId) &&
         incoming().userId == existing().userId &&
         incoming().createdAt == existing().createdAt &&
         isValidUserProfile(incoming()) &&
-        incoming().diff(existing()).affectedKeys().hasOnly([
-          'displayName', 'email', 'photoUrl', 'selectedDepartmentId',
-          'selectedDepartmentName', 'selectedYear', 'languagePreference',
-          'savedAnswersCount', 'bookmarksCount', 'testsCompletedCount', 'updatedAt'
-        ]);
+        (
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'email', 'photoUrl', 'selectedDepartmentId',
+              'selectedDepartmentName', 'selectedYear', 'languagePreference',
+              'savedAnswersCount', 'bookmarksCount', 'testsCompletedCount',
+              'aiUsageCount', 'updatedAt'
+            ]) &&
+            (!('aiUsageCount' in incoming().diff(existing()).affectedKeys()) || isValidAiUsageIncrement())
+          ) ||
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'freeAiLimit', 'purchasedAiCredits', 'updatedAt'
+            ])
+          )
+        );
       allow delete: if isOwner(userId) || isAdmin();
 
       match /ai_answers/{answerId} {
@@ -443,6 +491,28 @@ service cloud.firestore {
         incoming().adminUid == request.auth.uid &&
         isValidAdminLog(incoming());
       allow update, delete: if false;
+    }
+
+    match /ai_purchase_requests/{requestId} {
+      allow get: if isSignedIn() && isValidId(requestId) && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isBootstrappedAdmin());
+      allow create: if isSignedIn() &&
+        isValidId(requestId) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        (!('adminNote' in incoming()) || incoming().adminNote == '') &&
+        isValidAiPurchaseRequest(incoming());
+      allow update: if isAdmin() &&
+        isValidId(requestId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().creditsAmount == existing().creditsAmount &&
+        incoming().transactionId == existing().transactionId &&
+        existing().status == 'pending' &&
+        incoming().status in ['approved', 'rejected'] &&
+        isValidAiPurchaseRequest(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'adminNote', 'updatedAt']);
+      allow delete: if isAdmin() && isValidId(requestId);
     }
   }
 }

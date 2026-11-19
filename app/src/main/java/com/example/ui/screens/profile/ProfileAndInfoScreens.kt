@@ -80,6 +80,7 @@ import com.example.BuildConfig
 import com.example.R
 import com.example.core.AppUpdateInfo
 import com.example.core.PdfUtils
+import com.example.data.model.AiQuotaState
 import com.example.data.model.BookmarkItem
 import com.example.data.model.Department
 import com.example.data.model.DeveloperProfileConfig
@@ -91,6 +92,7 @@ import com.example.ui.components.EmptyStateView
 import com.example.ui.components.ErrorStateCard
 import com.example.ui.components.HonoursTopBar
 import com.example.ui.components.SectionHeader
+import com.example.ui.screens.ai.AiQuotaBannerCard
 import com.example.ui.theme.AppThemeMode
 import com.example.ui.theme.Emerald600
 
@@ -292,7 +294,9 @@ fun ProfileScreen(
     onOpenAdminPanel: () -> Unit,
     onOpenAboutDeveloper: () -> Unit,
     onSignOut: () -> Unit,
-    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig()
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
+    aiQuotaState: AiQuotaState = AiQuotaState(),
+    onOpenBuyLimit: () -> Unit = {}
 ) {
     var nameInput by remember(profile?.displayName) { mutableStateOf(profile?.displayName ?: "") }
     var selectedYear by remember(profile?.selectedYear) { mutableLongStateOf(profile?.selectedYear ?: 1L) }
@@ -386,6 +390,13 @@ fun ProfileScreen(
                 ProfileStatBox("বুকমার্ক", bookmarksCount.toString(), Modifier.weight(1f))
                 ProfileStatBox("মডেল টেস্ট", testResults.size.toString(), Modifier.weight(1f))
             }
+        }
+
+        item {
+            AiQuotaBannerCard(
+                quota = aiQuotaState,
+                onBuyLimitClick = onOpenBuyLimit
+            )
         }
 
         item {

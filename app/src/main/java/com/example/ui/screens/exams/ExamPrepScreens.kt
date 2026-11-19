@@ -67,6 +67,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.data.model.AiQuotaState
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.BookmarkItem
 import com.example.data.model.GeneratedMcqItem
@@ -80,6 +81,7 @@ import com.example.ui.components.HonoursTopBar
 import com.example.ui.components.LoadingStateBox
 import com.example.ui.components.ReportIssueDialog
 import com.example.ui.components.SectionHeader
+import com.example.ui.screens.ai.AiQuotaBannerCard
 import com.example.ui.theme.CrimsonError
 import com.example.ui.theme.Emerald600
 import kotlinx.coroutines.delay
@@ -425,7 +427,9 @@ fun McqPracticeScreen(
     generatedMcqsState: UiState<List<GeneratedMcqItem>>,
     remoteConfig: AiRemoteConfig,
     onBack: () -> Unit,
-    onGenerateAiMcqs: (topic: String, yearLabel: String, count: Int, lang: String, remoteConfig: AiRemoteConfig) -> Unit
+    onGenerateAiMcqs: (topic: String, yearLabel: String, count: Int, lang: String, remoteConfig: AiRemoteConfig) -> Unit,
+    aiQuotaState: AiQuotaState = AiQuotaState(),
+    onOpenBuyLimit: () -> Unit = {}
 ) {
     val staticMcqs = remember(questions) {
         questions.filter { it.questionType == "mcq" && it.options.isNotEmpty() }.map {
@@ -463,6 +467,12 @@ fun McqPracticeScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                AiQuotaBannerCard(
+                    quota = aiQuotaState,
+                    onBuyLimitClick = onOpenBuyLimit
+                )
+            }
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),

@@ -10,6 +10,8 @@ import com.example.core.PdfUtils
 import com.example.core.PreferencesManager
 import com.example.core.toUserFriendlyFirestoreMessage
 import com.example.data.model.AdminLog
+import com.example.data.model.AiLimitConfig
+import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
@@ -85,6 +87,28 @@ class AdminViewModel(
             emit(emptyList())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    val purchaseRequests: StateFlow<UiState<List<AiLimitPurchaseRequest>>> =
+        firestoreRepo.observeAllPurchaseRequestsForAdmin()
+            .map<List<AiLimitPurchaseRequest>, UiState<List<AiLimitPurchaseRequest>>> { UiState.Success(it) }
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }
+                    .filterIsInstance<FirebaseFirestoreException>()
+                    .firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(UiState.Error((firestoreErr ?: err).toUserFriendlyFirestoreMessage("পেমেন্ট রিকোয়েস্ট লোড করা যায়নি।")))
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
+
+    val aiLimitConfig: StateFlow<AiLimitConfig> = firestoreRepo.observeAiLimitConfig()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(AiLimitConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AiLimitConfig())
 
     fun refreshAdminStatus() {
         viewModelScope.launch {
@@ -292,6 +316,30 @@ class AdminViewModel(
             firestoreRepo.saveDeveloperProfile(config)
                 .onSuccess { _adminToast.value = "ডেভেলপারের সকল তথ্য সফলভাবে আপডেট করা হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to update developer profile.") }
+        }
+    }
+
+    fun saveAiLimitConfig(config: AiLimitConfig) {
+        viewModelScope.launch {
+            firestoreRepo.saveAiLimitConfig(config)
+                .onSuccess { _adminToast.value = "AI লিমিট ও পেমেন্ট সেটিংস সংরক্ষণ করা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save AI limit config.") }
+        }
+    }
+
+    fun reviewPurchaseRequest(requestId: String, approve: Boolean, adminNote: String) {
+        viewModelScope.launch {
+            firestoreRepo.reviewAiLimitPurchaseRequest(requestId, approve, adminNote)
+                .onSuccess {
+                    _adminToast.value = if (approve) {
+                        "পেমেন্ট অনুমোদিত হয়েছে এবং শিক্ষার্থীর অ্যাকাউন্টে লিমিট যোগ করা হয়েছে!"
+                    } else {
+                        "পেমেন্ট রিকোয়েস্ট বাতিল করা হয়েছে।"
+                    }
+                }
+                .onFailure { err ->
+                    _adminToast.value = err.toUserFriendlyFirestoreMessage("রিকোয়েস্ট প্রসেস করা যায়নি।")
+                }
         }
     }
 }
