@@ -21,6 +21,14 @@ private const val RECAPTCHA_SITE_KEY_RES = "recaptcha_site_key"
 var appCheckInitSummary: String = "uninitialized"
     private set
 
+@Volatile
+var firstAppCheckError: String? = null
+    private set
+
+@Volatile
+var firstAppCheckTokenReady: Boolean = false
+    private set
+
 fun ensureFirebaseReady(context: Context): Boolean {
     val appContext = context.applicationContext
     return try {
@@ -65,6 +73,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
                 DebugAppCheckProviderFactory.getInstance()
             )
             appCheckInitSummary = "debug_provider(hasIntentToken=${!debugToken.isNullOrEmpty()})"
+            warmUpAndCaptureFirstError()
             Log.d(TAG, "DebugAppCheckProviderFactory installed.")
         } else {
             val siteKey = runCatching {
@@ -79,6 +88,7 @@ fun configureAppCheck(context: Context, intent: Intent?) {
                     true
                 )
                 appCheckInitSummary = "recaptcha_installed(keyPrefix=${siteKey.take(6)})"
+                warmUpAndCaptureFirstError()
                 Log.d(TAG, "RecaptchaAppCheckProviderFactory installed.")
             } else {
                 appCheckInitSummary = "recaptcha_site_key_missing"
@@ -91,11 +101,44 @@ fun configureAppCheck(context: Context, intent: Intent?) {
     }
 }
 
-suspend fun diagnoseAppCheckFailure(): String {
-    return try {
-        val token = FirebaseAppCheck.getInstance().getAppCheckToken(true).await()
-        "Token fetched (len=${token.token.length}, $appCheckInitSummary)"
+private fun warmUpAndCaptureFirstError() {
+    try {
+        FirebaseAppCheck.getInstance().getAppCheckToken(false)
+            .addOnSuccessListener { token ->
+                firstAppCheckTokenReady = token.token.isNotBlank()
+                firstAppCheckError = null
+                Log.d(TAG, "Initial App Check token fetched successfully (len=${token.token.length}).")
+            }
+            .addOnFailureListener { err ->
+                if (firstAppCheckError == null) {
+                    val causeMsg = err.cause?.localizedMessage?.takeIf { it.isNotBlank() }?.let { " | cause: $it" }.orEmpty()
+                    firstAppCheckError = "${err.javaClass.simpleName}: ${err.localizedMessage ?: "unknown"}$causeMsg"
+                }
+                Log.e(TAG, "Initial App Check token fetch failed", err)
+            }
     } catch (e: Exception) {
-        "Token fetch failed: ${e.localizedMessage ?: e.javaClass.simpleName} ($appCheckInitSummary)"
+        if (firstAppCheckError == null) {
+            firstAppCheckError = "${e.javaClass.simpleName}: ${e.localizedMessage ?: "unknown"}"
+        }
+        Log.e(TAG, "Failed to trigger App Check warm-up", e)
+    }
+}
+
+suspend fun diagnoseAppCheckFailure(): String {
+    val capturedFirst = firstAppCheckError
+    return try {
+        val token = FirebaseAppCheck.getInstance().getAppCheckToken(false).await()
+        "Token fetched (len=${token.token.length}, $appCheckInitSummary, firstErr=${capturedFirst ?: "none"})"
+    } catch (e: Exception) {
+        val currentMsg = "${e.javaClass.simpleName}: ${e.localizedMessage ?: "unknown"}"
+        if (capturedFirst == null) {
+            firstAppCheckError = currentMsg
+        }
+        val firstPart = if (!capturedFirst.isNullOrBlank() && capturedFirst != currentMsg) {
+            " | firstError=$capturedFirst"
+        } else {
+            ""
+        }
+        "Token fetch failed: $currentMsg$firstPart ($appCheckInitSummary)"
     }
 }
