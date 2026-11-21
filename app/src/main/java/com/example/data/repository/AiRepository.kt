@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.graphics.Bitmap
 import android.util.Log
+import com.example.core.diagnoseAppCheckFailure
 import com.example.data.model.AiMessage
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.AiTutorMode
@@ -195,7 +196,13 @@ class AiRepository {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "AI question solver failed", e)
-            Result.failure(e)
+            val msg = e.localizedMessage.orEmpty()
+            if (msg.contains("App Check", ignoreCase = true)) {
+                val diag = diagnoseAppCheckFailure()
+                Result.failure(Exception("$msg\n[$diag]", e))
+            } else {
+                Result.failure(e)
+            }
         }
     }
 
@@ -241,6 +248,9 @@ class AiRepository {
         Log.e(TAG, "Tutor stream failed", error)
         throw if (error is TimeoutCancellationException) {
             Exception("Response timed out after 60 seconds. Please try again.", error)
+        } else if ((error.localizedMessage ?: "").contains("App Check", ignoreCase = true)) {
+            val diag = diagnoseAppCheckFailure()
+            Exception("${error.localizedMessage}\n[$diag]", error)
         } else {
             error
         }
@@ -293,7 +303,13 @@ class AiRepository {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "MCQ generation failed", e)
-            Result.failure(e)
+            val msg = e.localizedMessage.orEmpty()
+            if (msg.contains("App Check", ignoreCase = true)) {
+                val diag = diagnoseAppCheckFailure()
+                Result.failure(Exception("$msg\n[$diag]", e))
+            } else {
+                Result.failure(e)
+            }
         }
     }
 
