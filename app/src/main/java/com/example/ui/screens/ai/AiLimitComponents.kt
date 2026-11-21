@@ -202,7 +202,7 @@ fun AiLimitPurchaseSheet(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "প্রতিটি প্রশ্নে ${config.freeLimit}টি ফ্রী লিমিটের পর অতিরিক্ত প্যাকেজ নিন",
+                            text = "প্রতিটি অ্যাকাউন্টে ${config.freeLimit}টি ফ্রী AI সুবিধার পর অতিরিক্ত প্যাকেজ নিন",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

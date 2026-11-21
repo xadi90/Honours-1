@@ -1001,7 +1001,8 @@ private fun MainAuthenticatedShell(
                             onBack = { navController.popBackStack() },
                             onRefreshStatus = { adminViewModel.refreshAdminStatus() },
                             onVerifyPin = { adminViewModel.verifyAndUnlock(it) },
-                            onInitializePin = { adminViewModel.initializeBackendPin(it) }
+                            onInitializePin = { adminViewModel.initializeBackendPin(it) },
+                            onClearError = { adminViewModel.clearAuthError() }
                         )
                     }
 

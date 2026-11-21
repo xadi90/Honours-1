@@ -101,12 +101,13 @@ class FirestoreRepository(
 
     suspend fun initializeAdminPin(pin: String): Result<Unit> {
         val path = "app_settings/admin_security"
+        val cleanPin = pin.trim()
         return try {
-            require(pin.length >= 4) { "PIN must be at least 4 characters." }
+            require(cleanPin.length >= 4) { "PIN must be at least 4 characters." }
             val uid = requireUserId()
             db.collection("app_settings").document("admin_security").set(
                 mapOf(
-                    "pinHash" to sha256(pin),
+                    "pinHash" to sha256(cleanPin),
                     "updatedBy" to uid,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )

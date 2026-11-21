@@ -55,6 +55,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -103,11 +104,15 @@ fun AdminPasswordScreen(
     onBack: () -> Unit,
     onRefreshStatus: () -> Unit,
     onVerifyPin: (String) -> Unit,
-    onInitializePin: (String) -> Unit
+    onInitializePin: (String) -> Unit,
+    onClearError: () -> Unit = {}
 ) {
     var pinInput by remember { mutableStateOf("") }
     var showPin by remember { mutableStateOf(false) }
+    var resetMode by remember { mutableStateOf(false) }
     var nowMs by remember { mutableLongStateOf(System.currentTimeMillis()) }
+
+    val isSettingNewPin = (hasPinConfigured == false) || (isBackendAdminAccount && resetMode)
 
     LaunchedEffect(Unit) {
         onRefreshStatus()
@@ -177,15 +182,19 @@ fun AdminPasswordScreen(
                         ErrorStateCard(
                             message = "এই Google অ্যাকাউন্টটি নির্ধারিত এডমিন তালিকাভুক্ত নয়। শুধুমাত্র অনুমোদিত এডমিন অ্যাকাউন্ট দিয়ে কনটেন্ট ম্যানেজমেন্ট ব্যবহার করা যাবে।"
                         )
-                    } else if (hasPinConfigured == false) {
+                    } else if (isSettingNewPin) {
                         Text(
-                            text = "প্রথমবার সেটআপ: আপনার নির্ধারিত অ্যাডমিন পিন/পাসওয়ার্ড ব্যাকএন্ড Firestore-এ নিরাপদ SHA-256 হ্যাশ হিসেবে সংরক্ষণ করুন।",
+                            text = if (resetMode) {
+                                "যাচাইকৃত অ্যাডমিন অ্যাকাউন্ট থেকে কমপক্ষে ৪ সংখ্যার নতুন অ্যাডমিন পাসওয়ার্ড সেট করুন।"
+                            } else {
+                                "প্রথমবার সেটআপ: কমপক্ষে ৪ সংখ্যার আপনার নিজের অ্যাডমিন পিন/পাসওয়ার্ড দিয়ে আনলক করুন।"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
                         Text(
-                            text = "কনটেন্ট ম্যানেজমেন্ট প্যানেলে প্রবেশ করতে অ্যাডমিন পাসওয়ার্ড লিখুন। পাসওয়ার্ড ব্যাকএন্ড থেকে যাচাই করা হয়।",
+                            text = "কনটেন্ট ম্যানেজমেন্ট প্যানেলে প্রবেশ করতে অ্যাডমিন পাসওয়ার্ড লিখুন। ভুলে গেলে নিচে থেকে রিসেট করতে পারবেন।",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -201,7 +210,7 @@ fun AdminPasswordScreen(
                         value = pinInput,
                         onValueChange = { pinInput = it },
                         label = {
-                            Text(if (hasPinConfigured == false) "নতুন অ্যাডমিন পাসওয়ার্ড সেট করুন" else "অ্যাডমিন পাসওয়ার্ড")
+                            Text(if (isSettingNewPin) "নতুন অ্যাডমিন পাসওয়ার্ড (কমপক্ষে ৪ সংখ্যা)" else "অ্যাডমিন পাসওয়ার্ড")
                         },
                         singleLine = true,
                         visualTransformation = if (showPin) VisualTransformation.None else PasswordVisualTransformation(),
@@ -221,13 +230,15 @@ fun AdminPasswordScreen(
 
                     Button(
                         onClick = {
-                            if (hasPinConfigured == false) {
+                            if (isSettingNewPin) {
                                 onInitializePin(pinInput.trim())
                             } else {
                                 onVerifyPin(pinInput.trim())
                             }
                         },
-                        enabled = !isVerifying && remainingLockoutSec == 0L && pinInput.isNotBlank() && isBackendAdminAccount,
+                        enabled = !isVerifying && remainingLockoutSec == 0L &&
+                            pinInput.trim().length >= (if (isSettingNewPin) 4 else 1) &&
+                            isBackendAdminAccount,
                         modifier = Modifier
                             .fillMaxWidth()
                             .minimumInteractiveComponentSize()
@@ -238,7 +249,23 @@ fun AdminPasswordScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("যাচাই করা হচ্ছে...")
                         } else {
-                            Text(if (hasPinConfigured == false) "ব্যাকএন্ড পিন সেট ও আনলক করুন" else "আনলক করুন")
+                            Text(if (isSettingNewPin) "নতুন পিন সেট ও আনলক করুন" else "আনলক করুন")
+                        }
+                    }
+
+                    if (isBackendAdminAccount && hasPinConfigured != false) {
+                        TextButton(
+                            onClick = {
+                                resetMode = !resetMode
+                                pinInput = ""
+                                onClearError()
+                            },
+                            modifier = Modifier.testTag("admin_reset_pin_toggle")
+                        ) {
+                            Text(
+                                if (resetMode) "আগের পাসওয়ার্ড দিয়ে আনলক করুন"
+                                else "পাসওয়ার্ড ভুলে গেছেন? নতুন পাসওয়ার্ড সেট করুন"
+                            )
                         }
                     }
                 }
