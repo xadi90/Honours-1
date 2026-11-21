@@ -1,8 +1,12 @@
 package com.example
 
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.test.assertContentDescriptionEquals
+import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AiLimitConfig
@@ -41,8 +45,11 @@ class AppStartupRobolectricTest {
             composeRule.onNodeWithTag("onboarding_skip_button").performClick()
             composeRule.waitForIdle()
         }
-        composeRule.onNodeWithTag("google_sign_in_button").assertExists()
-        composeRule.onNodeWithTag("offline_syllabus_preview_button").performClick()
+        composeRule.onNodeWithTag("google_sign_in_button", useUnmergedTree = true)
+            .assertExists()
+            .assertHasClickAction()
+        composeRule.onNodeWithTag("offline_syllabus_preview_button", useUnmergedTree = true)
+            .performClick()
         composeRule.waitForIdle()
     }
 }
@@ -87,6 +94,75 @@ class HomeAndFallbackRobolectricTest {
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("home_search_bar").assertExists()
         composeRule.onNodeWithTag("home_ai_solver_banner").assertExists()
+        composeRule.onNodeWithTag("hero_system_status_badge", useUnmergedTree = true)
+            .assertExists()
+            .assertContentDescriptionEquals("System Status: Online")
+        composeRule.onNodeWithText("System Status: Online", useUnmergedTree = true)
+            .assertExists()
+    }
+
+    @Test
+    fun `hero system status badge updates in real time between online, maintenance, and offline`() {
+        val remoteConfigState = mutableStateOf(AiRemoteConfig(maintenanceMode = false))
+        val onlineState = mutableStateOf(true)
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                HomeDashboardScreen(
+                    profile = null,
+                    subjects = AcademicSeedCatalog.starterSubjects,
+                    pdfs = AcademicSeedCatalog.starterPdfs,
+                    announcements = AcademicSeedCatalog.starterAnnouncements,
+                    recentPdfIds = emptyList(),
+                    recentSubjectIds = emptyList(),
+                    bookmarksCount = 0,
+                    onOpenDrawer = {},
+                    onSearchClick = {},
+                    onAiSolverClick = {},
+                    onPoliticalScienceClick = {},
+                    onYearClick = {},
+                    onPdfLibraryClick = {},
+                    onPreviousQuestionsClick = {},
+                    onSuggestionsClick = {},
+                    onMcqPracticeClick = {},
+                    onModelTestClick = {},
+                    onBookmarksClick = {},
+                    onDownloadsClick = {},
+                    onSubjectClick = {},
+                    onPdfClick = {},
+                    onAboutDeveloperClick = {},
+                    aiRemoteConfig = remoteConfigState.value,
+                    isOnline = onlineState.value
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("hero_system_status_badge", useUnmergedTree = true)
+            .assertExists()
+            .assertContentDescriptionEquals("System Status: Online")
+        composeRule.onNodeWithText("System Status: Online", useUnmergedTree = true)
+            .assertExists()
+
+        remoteConfigState.value = AiRemoteConfig(
+            maintenanceMode = true,
+            maintenanceMessage = "Scheduled Gemini upgrade"
+        )
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("hero_system_status_badge", useUnmergedTree = true)
+            .assertExists()
+            .assertContentDescriptionEquals("System Status: Maintenance")
+        composeRule.onNodeWithText("System Status: Maintenance", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithText("Scheduled Gemini upgrade", useUnmergedTree = true)
+            .assertExists()
+
+        remoteConfigState.value = AiRemoteConfig(maintenanceMode = false)
+        onlineState.value = false
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("hero_system_status_badge", useUnmergedTree = true)
+            .assertExists()
+            .assertContentDescriptionEquals("System Status: Offline")
+        composeRule.onNodeWithText("System Status: Offline", useUnmergedTree = true)
+            .assertExists()
     }
 
     @Test

@@ -1,11 +1,20 @@
 package com.example.ui.screens.home
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +28,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -63,11 +73,15 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.R
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
 import com.example.data.model.Department
@@ -79,10 +93,16 @@ import com.example.data.model.UserProfile
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.HonoursTopBar
 import com.example.ui.components.SectionHeader
+import com.example.ui.theme.CrimsonContainerLight
+import com.example.ui.theme.CrimsonError
+import com.example.ui.theme.Emerald100
+import com.example.ui.theme.Emerald600
+import com.example.ui.theme.Gold200
 import com.example.ui.theme.Gold500
 import com.example.ui.theme.Navy700
 import com.example.ui.theme.Navy900
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun HomeDashboardScreen(
     profile: UserProfile?,
@@ -107,7 +127,9 @@ fun HomeDashboardScreen(
     onSubjectClick: (String) -> Unit,
     onPdfClick: (String) -> Unit,
     onAboutDeveloperClick: () -> Unit,
-    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig()
+    developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
+    aiRemoteConfig: AiRemoteConfig = AiRemoteConfig(),
+    isOnline: Boolean = true
 ) {
     val studentName = profile?.displayName?.takeIf { it.isNotBlank() } ?: "NU Student"
     val recentPdfs = remember(pdfs, recentPdfIds) {
@@ -217,7 +239,7 @@ fun HomeDashboardScreen(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(168.dp)
+                        .height(176.dp)
                 )
                 Box(
                     modifier = Modifier
@@ -225,9 +247,9 @@ fun HomeDashboardScreen(
                         .background(
                             Brush.horizontalGradient(
                                 colors = listOf(
-                                    Navy900.copy(alpha = 0.92f),
-                                    Navy900.copy(alpha = 0.65f),
-                                    Color.Transparent
+                                    Navy900.copy(alpha = 0.94f),
+                                    Navy900.copy(alpha = 0.70f),
+                                    Navy900.copy(alpha = 0.25f)
                                 )
                             )
                         )
@@ -235,18 +257,27 @@ fun HomeDashboardScreen(
                 ) {
                     Column(
                         modifier = Modifier.align(Alignment.CenterStart),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Surface(
-                            color = Gold500,
-                            contentColor = Navy900,
-                            shape = RoundedCornerShape(8.dp)
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Text(
-                                text = "GEMINI AI TUTOR",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            Surface(
+                                color = Gold500,
+                                contentColor = Navy900,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text(
+                                    text = "GEMINI AI TUTOR",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                            HeroSystemStatusBadge(
+                                maintenanceMode = aiRemoteConfig.maintenanceMode,
+                                isOnline = isOnline
                             )
                         }
                         Text(
@@ -256,10 +287,18 @@ fun HomeDashboardScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "টাইপ করুন, ছবি তুলুন বা PDF দিন — পরীক্ষার উপযোগী পূর্ণাঙ্গ উত্তর পান",
+                            text = if (aiRemoteConfig.maintenanceMode) {
+                                aiRemoteConfig.maintenanceMessage.ifBlank {
+                                    "AI সার্ভিসে রক্ষণাবেক্ষণ কাজ চলছে — শীঘ্রই আবার চালু হবে"
+                                }
+                            } else {
+                                "টাইপ করুন, ছবি তুলুন বা PDF দিন — পরীক্ষার উপযোগী পূর্ণাঙ্গ উত্তর পান"
+                            },
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.9f),
-                            modifier = Modifier.widthIn(max = 260.dp)
+                            color = if (aiRemoteConfig.maintenanceMode) Gold200 else Color.White.copy(alpha = 0.9f),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.widthIn(max = 280.dp)
                         )
                     }
                 }
@@ -597,6 +636,84 @@ fun HomeDashboardScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "View developer info")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun HeroSystemStatusBadge(
+    maintenanceMode: Boolean,
+    isOnline: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val label = when {
+        maintenanceMode -> stringResource(R.string.system_status_maintenance)
+        !isOnline -> stringResource(R.string.system_status_offline)
+        else -> stringResource(R.string.system_status_online)
+    }
+
+    val targetContainerColor = when {
+        maintenanceMode -> Gold500.copy(alpha = 0.24f)
+        !isOnline -> CrimsonError.copy(alpha = 0.28f)
+        else -> Emerald600.copy(alpha = 0.26f)
+    }
+    val targetBorderColor = when {
+        maintenanceMode -> Gold500.copy(alpha = 0.78f)
+        !isOnline -> CrimsonError.copy(alpha = 0.80f)
+        else -> Emerald600.copy(alpha = 0.85f)
+    }
+    val targetContentColor = when {
+        maintenanceMode -> Gold200
+        !isOnline -> CrimsonContainerLight
+        else -> Emerald100
+    }
+    val dotColor = when {
+        maintenanceMode -> Gold500
+        !isOnline -> CrimsonError
+        else -> Emerald600
+    }
+
+    val containerColor by animateColorAsState(targetValue = targetContainerColor, label = "status_bg")
+    val borderColor by animateColorAsState(targetValue = targetBorderColor, label = "status_border")
+    val contentColor by animateColorAsState(targetValue = targetContentColor, label = "status_fg")
+
+    val infiniteTransition = rememberInfiniteTransition(label = "status_pulse")
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse_alpha"
+    )
+
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = RoundedCornerShape(8.dp),
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier
+            .testTag("hero_system_status_badge")
+            .semantics { contentDescription = label }
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(dotColor.copy(alpha = if (isOnline) pulseAlpha else 1f))
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1
+            )
         }
     }
 }

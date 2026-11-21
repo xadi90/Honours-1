@@ -14,4 +14,7 @@
     <string name="sign_in_google">Sign in with Google</string>
     <string name="ai_solver_title">AI প্রশ্ন সমাধান</string>
     <string name="all_dept_library_title">সকল বিভাগের PDF লাইব্রেরি</string>
+    <string name="system_status_online">System Status: Online</string>
+    <string name="system_status_maintenance">System Status: Maintenance</string>
+    <string name="system_status_offline">System Status: Offline</string>
 </resources>

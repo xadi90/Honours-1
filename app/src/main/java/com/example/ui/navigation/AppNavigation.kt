@@ -587,7 +587,9 @@ private fun MainAuthenticatedShell(
                             onSubjectClick = { subjId -> navController.navigate(AppRoutes.subjectDetails(subjId)) },
                             onPdfClick = { pdfId -> navController.navigate(AppRoutes.pdfReader(pdfId)) },
                             onAboutDeveloperClick = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) },
-                            developerProfile = developerProfile
+                            developerProfile = developerProfile,
+                            aiRemoteConfig = aiRemoteConfig,
+                            isOnline = isOnline
                         )
                     }
 
