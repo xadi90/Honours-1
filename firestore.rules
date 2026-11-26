@@ -291,6 +291,24 @@ service cloud.firestore {
         isValidTimestamp(data.updatedAt);
     }
 
+    function isValidCollegeSection(data) {
+      return data.blockType in ['notice', 'principal', 'department', 'routine', 'faculty', 'admission', 'link', 'custom'] &&
+        isBoundedString(data.title, 1, 200) &&
+        (!('subtitle' in data) || isBoundedString(data.subtitle, 0, 250)) &&
+        (!('body' in data) || isBoundedString(data.body, 0, 15000)) &&
+        (!('badgeText' in data) || isBoundedString(data.badgeText, 0, 50)) &&
+        (!('iconKey' in data) || data.iconKey in ['school', 'campaign', 'schedule', 'groups', 'book', 'info', 'phone', 'link', 'star']) &&
+        (!('accentStyle' in data) || data.accentStyle in ['primary', 'gold', 'emerald', 'teal', 'crimson']) &&
+        (!('layoutSpan' in data) || data.layoutSpan in ['full', 'half']) &&
+        (!('actionLabel' in data) || isBoundedString(data.actionLabel, 0, 80)) &&
+        (!('actionUrl' in data) || isBoundedString(data.actionUrl, 0, 500)) &&
+        (!('pinned' in data) || data.pinned is bool) &&
+        (!('sortOrder' in data) || data.sortOrder is int) &&
+        isValidStatus(data.status) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
     // --- User Scoped Collections ---
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
@@ -453,6 +471,14 @@ service cloud.firestore {
       allow create: if isAdmin() && isValidId(announcementId) && isValidAnnouncement(incoming());
       allow update: if isAdmin() && isValidId(announcementId) && incoming().createdAt == existing().createdAt && isValidAnnouncement(incoming());
       allow delete: if isAdmin() && isValidId(announcementId);
+    }
+
+    match /college_sections/{sectionId} {
+      allow get: if isSignedIn() && isValidId(sectionId) && (existing().status == 'published' || isAdmin());
+      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
+      allow create: if isAdmin() && isValidId(sectionId) && isValidCollegeSection(incoming());
+      allow update: if isAdmin() && isValidId(sectionId) && incoming().createdAt == existing().createdAt && isValidCollegeSection(incoming());
+      allow delete: if isAdmin() && isValidId(sectionId);
     }
 
     // --- Admin, Settings, Reports & Audit Logs ---

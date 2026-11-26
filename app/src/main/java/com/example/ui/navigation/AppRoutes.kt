@@ -40,7 +40,8 @@ object AppRoutes {
     const val MCQ_PRACTICE = "mcq_practice"
     const val MODEL_TEST = "model_test"
 
-    // Profile, Settings, Info
+    // Profile, Settings, Info & College Portal
+    const val SUJAT_ALI_COLLEGE = "sujat_ali_college"
     const val SETTINGS = "settings"
     const val ABOUT_DEVELOPER = "about_developer"
 
@@ -52,4 +53,5 @@ object AppRoutes {
     const val ADMIN_ANNOUNCEMENTS = "admin_announcements"
     const val ADMIN_REPORTS = "admin_reports"
     const val ADMIN_LIMIT_MANAGEMENT = "admin_limit_management"
+    const val ADMIN_COLLEGE_EDITOR = "admin_college_editor"
 }

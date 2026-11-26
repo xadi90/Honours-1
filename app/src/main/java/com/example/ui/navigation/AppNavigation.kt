@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
@@ -83,6 +84,7 @@ import com.example.data.repository.FirestoreRepository
 import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.screens.admin.AdminAiLimitScreen
 import com.example.ui.screens.admin.AdminAnnouncementScreen
+import com.example.ui.screens.admin.AdminCollegeEditorScreen
 import com.example.ui.screens.admin.AdminContentEditorScreen
 import com.example.ui.screens.admin.AdminDashboardScreen
 import com.example.ui.screens.admin.AdminPasswordScreen
@@ -97,6 +99,7 @@ import com.example.ui.screens.auth.AuthScreen
 import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.auth.OnboardingScreen
 import com.example.ui.screens.auth.SplashScreen
+import com.example.ui.screens.college.SujatAliCollegeScreen
 import com.example.ui.screens.exams.McqPracticeScreen
 import com.example.ui.screens.exams.ModelTestScreen
 import com.example.ui.screens.exams.PreviousQuestionScreen
@@ -271,6 +274,8 @@ private fun MainAuthenticatedShell(
     val developerProfile by mainViewModel.developerProfile.collectAsStateWithLifecycle()
     val aiLimitConfig by mainViewModel.aiLimitConfig.collectAsStateWithLifecycle()
     val myPurchaseRequests by mainViewModel.myPurchaseRequests.collectAsStateWithLifecycle()
+    val collegeProfile by mainViewModel.collegeProfile.collectAsStateWithLifecycle()
+    val collegeSections by mainViewModel.collegeSections.collectAsStateWithLifecycle()
     val isBackendAdmin by mainViewModel.isAdmin.collectAsStateWithLifecycle()
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val mainActionMsg by mainViewModel.actionMessage.collectAsStateWithLifecycle()
@@ -441,6 +446,13 @@ private fun MainAuthenticatedShell(
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
                     NavigationDrawerItem(
+                        label = { Text("সুজাত আলী অনার্স কলেজ, পিংনা") },
+                        selected = currentRoute == AppRoutes.SUJAT_ALI_COLLEGE,
+                        onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) },
+                        icon = { Icon(Icons.Default.AccountBalance, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    NavigationDrawerItem(
                         label = { Text("রাষ্ট্রবিজ্ঞান বিভাগ (১ম–৪র্থ বর্ষ)") },
                         selected = currentRoute == AppRoutes.POLITICAL_SCIENCE,
                         onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.POLITICAL_SCIENCE) },
@@ -589,7 +601,10 @@ private fun MainAuthenticatedShell(
                             onAboutDeveloperClick = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) },
                             developerProfile = developerProfile,
                             aiRemoteConfig = aiRemoteConfig,
-                            isOnline = isOnline
+                            isOnline = isOnline,
+                            collegeTitleBn = collegeProfile.collegeNameBn,
+                            collegeSubtitleEn = collegeProfile.collegeNameEn,
+                            onCollegePortalClick = { navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) }
                         )
                     }
 
@@ -979,6 +994,22 @@ private fun MainAuthenticatedShell(
                         )
                     }
 
+                    composable(AppRoutes.SUJAT_ALI_COLLEGE) {
+                        SujatAliCollegeScreen(
+                            config = collegeProfile,
+                            sections = collegeSections,
+                            isBackendAdmin = isBackendAdmin,
+                            onBackClick = { navController.popBackStack() },
+                            onCustomizeClick = {
+                                if (isAdminAuthorized) {
+                                    navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR)
+                                } else {
+                                    navController.navigate(AppRoutes.ADMIN_PASSWORD)
+                                }
+                            }
+                        )
+                    }
+
                     composable(AppRoutes.ABOUT_DEVELOPER) {
                         AboutDeveloperScreen(
                             onBack = { navController.popBackStack() },
@@ -1040,7 +1071,8 @@ private fun MainAuthenticatedShell(
                             developerProfile = developerProfile,
                             onSaveDeveloperProfile = { adminViewModel.saveDeveloperProfile(it) },
                             pendingPurchasesCount = pendingPurchasesCount,
-                            onNavigateAiLimits = { navController.navigate(AppRoutes.ADMIN_LIMIT_MANAGEMENT) }
+                            onNavigateAiLimits = { navController.navigate(AppRoutes.ADMIN_LIMIT_MANAGEMENT) },
+                            onNavigateCollegeEditor = { navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR) }
                         )
                     }
 
@@ -1099,6 +1131,28 @@ private fun MainAuthenticatedShell(
                             onReviewRequest = { id, approve, note ->
                                 adminViewModel.reviewPurchaseRequest(id, approve, note)
                             }
+                        )
+                    }
+
+                    composable(AppRoutes.ADMIN_COLLEGE_EDITOR) {
+                        LaunchedEffect(isAdminAuthorized) {
+                            if (!isAdminAuthorized) {
+                                navController.popBackStack()
+                            }
+                        }
+                        val adminCollegeProfile by adminViewModel.collegeProfile.collectAsStateWithLifecycle()
+                        val adminCollegeSections by adminViewModel.adminCollegeSections.collectAsStateWithLifecycle()
+                        AdminCollegeEditorScreen(
+                            config = adminCollegeProfile,
+                            sections = adminCollegeSections,
+                            onBack = { navController.popBackStack() },
+                            onPreviewCollege = { navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) },
+                            onSaveProfile = { adminViewModel.saveCollegeProfile(it) },
+                            onSaveSection = { adminViewModel.saveCollegeSection(it) },
+                            onDeleteSection = { adminViewModel.deleteCollegeSection(it) },
+                            onMoveSection = { index, dir -> adminViewModel.moveCollegeSection(index, dir) },
+                            onToggleSectionStatus = { adminViewModel.toggleCollegeSectionStatus(it) },
+                            onSeedStarterTemplate = { adminViewModel.seedCollegeStarterData() }
                         )
                     }
                 }

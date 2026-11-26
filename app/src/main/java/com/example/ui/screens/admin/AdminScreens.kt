@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
@@ -293,7 +294,8 @@ fun AdminDashboardScreen(
     developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
     onSaveDeveloperProfile: (DeveloperProfileConfig) -> Unit = {},
     pendingPurchasesCount: Int = 0,
-    onNavigateAiLimits: () -> Unit = {}
+    onNavigateAiLimits: () -> Unit = {},
+    onNavigateCollegeEditor: () -> Unit = {}
 ) {
     var modelName by remember(remoteConfig.modelName) { mutableStateOf(remoteConfig.modelName) }
     var sysInstructions by remember(remoteConfig.systemInstructions) { mutableStateOf(remoteConfig.systemInstructions) }
@@ -369,6 +371,13 @@ fun AdminDashboardScreen(
                                 Modifier.weight(1f),
                                 "admin_nav_ai_limits"
                             )
+                            AdminActionCard(
+                                "সুজাত আলী কলেজ সাজান",
+                                Icons.Default.AccountBalance,
+                                onNavigateCollegeEditor,
+                                Modifier.weight(1f),
+                                "admin_nav_college_editor"
+                            )
                         }
                         OutlinedButton(
                             onClick = onSeedCatalog,
@@ -398,6 +407,18 @@ fun AdminDashboardScreen(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(
+                                selected = modelName == "gemini-3.8-flash",
+                                onClick = { modelName = "gemini-3.8-flash" },
+                                label = { Text("gemini-3.8-flash") }
+                            )
+                            FilterChip(
+                                selected = modelName == "gemini-3.5-flash-lite",
+                                onClick = { modelName = "gemini-3.5-flash-lite" },
+                                label = { Text("gemini-3.5-flash-lite (Fast)") }
+                            )
+                        }
                         OutlinedTextField(
                             value = sysInstructions,
                             onValueChange = { sysInstructions = it },

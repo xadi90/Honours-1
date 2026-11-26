@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Campaign
@@ -129,7 +130,10 @@ fun HomeDashboardScreen(
     onAboutDeveloperClick: () -> Unit,
     developerProfile: DeveloperProfileConfig = DeveloperProfileConfig(),
     aiRemoteConfig: AiRemoteConfig = AiRemoteConfig(),
-    isOnline: Boolean = true
+    isOnline: Boolean = true,
+    collegeTitleBn: String = "সুজাত আলী অনার্স কলেজ, পিংনা",
+    collegeSubtitleEn: String = "Sujat Ali Honours College, Pingna",
+    onCollegePortalClick: () -> Unit = {}
 ) {
     val studentName = profile?.displayName?.takeIf { it.isNotBlank() } ?: "NU Student"
     val recentPdfs = remember(pdfs, recentPdfIds) {
@@ -470,6 +474,60 @@ fun HomeDashboardScreen(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "Open PDF Library",
                         tint = Gold500
+                    )
+                }
+            }
+        }
+
+        // Sujat Ali Honours College, Pingna Portal Card
+        item {
+            Card(
+                onClick = onCollegePortalClick,
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, Gold500.copy(alpha = 0.55f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_sujat_ali_college_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Surface(
+                        color = Gold500.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(50.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.AccountBalance,
+                                contentDescription = collegeTitleBn,
+                                tint = Gold500,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = collegeTitleBn,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "$collegeSubtitleEn • কলেজ নোটিশ, রুটিন ও বিভাগীয় তথ্য",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "Open Sujat Ali Honours College",
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }

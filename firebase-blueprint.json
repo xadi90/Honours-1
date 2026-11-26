@@ -303,6 +303,29 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "packageTitle", "creditsAmount", "priceBdt", "paymentMethod", "senderNumber", "transactionId", "status", "createdAt", "updatedAt"]
+    },
+    "CollegeSectionBlock": {
+      "title": "CollegeSectionBlock",
+      "description": "Admin-customizable modular section or card for Sujat Ali Honours College, Pingna",
+      "type": "object",
+      "properties": {
+        "blockType": { "type": "string", "enum": ["notice", "principal", "department", "routine", "faculty", "admission", "link", "custom"] },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "body": { "type": "string" },
+        "badgeText": { "type": "string" },
+        "iconKey": { "type": "string", "enum": ["school", "campaign", "schedule", "groups", "book", "info", "phone", "link", "star"] },
+        "accentStyle": { "type": "string", "enum": ["primary", "gold", "emerald", "teal", "crimson"] },
+        "layoutSpan": { "type": "string", "enum": ["full", "half"] },
+        "actionLabel": { "type": "string" },
+        "actionUrl": { "type": "string" },
+        "pinned": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "status": { "type": "string", "enum": ["published", "draft"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["blockType", "title", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -357,6 +380,10 @@
     "/announcements/{announcementId}": {
       "schema": { "$ref": "#/entities/Announcement" },
       "description": "Announcements"
+    },
+    "/college_sections/{sectionId}": {
+      "schema": { "$ref": "#/entities/CollegeSectionBlock" },
+      "description": "Customizable sections and cards for Sujat Ali Honours College, Pingna"
     },
     "/user_reports/{reportId}": {
       "schema": { "$ref": "#/entities/UserReport" },

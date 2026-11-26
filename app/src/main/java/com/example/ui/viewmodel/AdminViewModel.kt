@@ -15,6 +15,8 @@ import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
+import com.example.data.model.CollegeProfileConfig
+import com.example.data.model.CollegeSectionBlock
 import com.example.data.model.Department
 import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.PdfResource
@@ -109,6 +111,27 @@ class AdminViewModel(
             emit(AiLimitConfig())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AiLimitConfig())
+
+    val collegeProfile: StateFlow<CollegeProfileConfig> = firestoreRepo.observeCollegeProfile()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(CollegeProfileConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), CollegeProfileConfig())
+
+    val adminCollegeSections: StateFlow<List<CollegeSectionBlock>> = firestoreRepo.observeAllCollegeSectionsForAdmin()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            Log.w(TAG, "Unable to load admin college sections", firestoreErr ?: err)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     fun refreshAdminStatus() {
         viewModelScope.launch {
@@ -340,6 +363,56 @@ class AdminViewModel(
                 .onFailure { err ->
                     _adminToast.value = err.toUserFriendlyFirestoreMessage("রিকোয়েস্ট প্রসেস করা যায়নি।")
                 }
+        }
+    }
+
+    // --- Sujat Ali Honours College, Pingna Admin Actions ---
+    fun saveCollegeProfile(config: CollegeProfileConfig) {
+        viewModelScope.launch {
+            firestoreRepo.saveCollegeProfile(config)
+                .onSuccess { _adminToast.value = "সুজাত আলী অনার্স কলেজের থিম ও তথ্য সংরক্ষণ করা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("কলেজের তথ্য সংরক্ষণ করা যায়নি।") }
+        }
+    }
+
+    fun saveCollegeSection(section: CollegeSectionBlock) {
+        viewModelScope.launch {
+            firestoreRepo.upsertCollegeSection(section)
+                .onSuccess { _adminToast.value = "কলেজ কার্ড '${section.title}' সংরক্ষণ করা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("কলেজ কার্ড সংরক্ষণ করা যায়নি।") }
+        }
+    }
+
+    fun deleteCollegeSection(sectionId: String) {
+        viewModelScope.launch {
+            firestoreRepo.deleteCollegeSection(sectionId)
+                .onSuccess { _adminToast.value = "কার্ডটি মুছে ফেলা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("কার্ড মুছে ফেলা যায়নি।") }
+        }
+    }
+
+    fun moveCollegeSection(index: Int, direction: Int) {
+        val list = adminCollegeSections.value
+        val targetIndex = index + direction
+        if (index !in list.indices || targetIndex !in list.indices) return
+        val first = list[index]
+        val second = list[targetIndex]
+        viewModelScope.launch {
+            firestoreRepo.swapCollegeSectionOrder(first, second)
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("ক্রম পরিবর্তন করা যায়নি।") }
+        }
+    }
+
+    fun toggleCollegeSectionStatus(section: CollegeSectionBlock) {
+        val nextStatus = if (section.status == "published") "draft" else "published"
+        saveCollegeSection(section.copy(status = nextStatus))
+    }
+
+    fun seedCollegeStarterData() {
+        viewModelScope.launch {
+            firestoreRepo.seedDefaultCollegeToFirestore()
+                .onSuccess { count -> _adminToast.value = "সুজাত আলী কলেজের $count টি প্রারম্ভিক কার্ড Firestore-এ যুক্ত হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("টেমপ্লেট লোড করা যায়নি।") }
         }
     }
 }

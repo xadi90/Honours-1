@@ -29,8 +29,44 @@ class AiRepository {
     companion object {
         private const val TAG = "AiRepository"
         private const val DEFAULT_MODEL = "gemini-3.8-flash"
+        private const val FALLBACK_LITE_MODEL = "gemini-3.5-flash-lite"
         private const val TIMEOUT_MS = 60_000L
+        private const val RETRY_DELAY_MS = 900L
+        private const val SWITCH_DELAY_MS = 250L
         private const val MAX_INLINE_IMAGE_BYTES = 18 * 1024 * 1024 // Stay safely under 20MB limit
+
+        internal fun buildCandidateModels(configuredModel: String): List<String> {
+            val primary = configuredModel.trim().ifBlank { DEFAULT_MODEL }
+            return listOf(primary, FALLBACK_LITE_MODEL, DEFAULT_MODEL).distinct()
+        }
+
+        internal fun isTransientCapacityError(error: Throwable): Boolean {
+            val combined = generateSequence(error) { it.cause }
+                .joinToString(" | ") { "${it.javaClass.simpleName}: ${it.localizedMessage.orEmpty()}" }
+                .lowercase()
+            if (combined.contains("app check")) return false
+            return combined.contains("high demand") ||
+                combined.contains("spikes in demand") ||
+                combined.contains("overloaded") ||
+                combined.contains("503") ||
+                combined.contains("429") ||
+                combined.contains("unavailable") ||
+                combined.contains("resource_exhausted") ||
+                combined.contains("rate limit") ||
+                combined.contains("temporarily") ||
+                combined.contains("try again later") ||
+                combined.contains("serverexception") ||
+                combined.contains("serviceunavailable")
+        }
+
+        internal fun formatFriendlyAiError(error: Throwable): String {
+            val msg = error.localizedMessage.orEmpty()
+            return if (isTransientCapacityError(error)) {
+                "এই মুহূর্তে AI মডেলে অতিরিক্ত চাপ রয়েছে (High demand)। স্বয়ংক্রিয়ভাবে বিকল্প মডেল চেষ্টা করা হয়েছে—অনুগ্রহ করে কয়েক সেকেন্ড পর আবার চেষ্টা করুন।"
+            } else {
+                msg.ifBlank { "AI response generation failed. Please try again." }
+            }
+        }
     }
 
     private val structuredAnswerSchema = Schema.obj(
@@ -72,8 +108,7 @@ class AiRepository {
         )
     }
 
-    private fun createStructuredAnswerModel(remoteConfig: AiRemoteConfig): GenerativeModel {
-        val modelId = remoteConfig.modelName.ifBlank { DEFAULT_MODEL }
+    private fun createStructuredAnswerModel(modelId: String, remoteConfig: AiRemoteConfig): GenerativeModel {
         return Firebase.ai.generativeModel(
             modelName = modelId,
             generationConfig = generationConfig {
@@ -87,8 +122,7 @@ class AiRepository {
         )
     }
 
-    private fun createTutorModel(remoteConfig: AiRemoteConfig): GenerativeModel {
-        val modelId = remoteConfig.modelName.ifBlank { DEFAULT_MODEL }
+    private fun createTutorModel(modelId: String, remoteConfig: AiRemoteConfig): GenerativeModel {
         return if (modelId == DEFAULT_MODEL && remoteConfig.systemInstructions.isBlank()) {
             defaultChatModel
         } else {
@@ -98,6 +132,49 @@ class AiRepository {
                     text(buildSystemInstruction(remoteConfig.systemInstructions))
                 }
             )
+        }
+    }
+
+    private fun createMcqModel(modelId: String, remoteConfig: AiRemoteConfig): GenerativeModel {
+        return Firebase.ai.generativeModel(
+            modelName = modelId,
+            generationConfig = generationConfig {
+                responseMimeType = "application/json"
+                responseSchema = mcqArraySchema
+                temperature = 0.4f
+            },
+            systemInstruction = content {
+                text(buildSystemInstruction(remoteConfig.systemInstructions))
+            }
+        )
+    }
+
+    private suspend fun <T> executeWithModelFallback(
+        configuredModel: String,
+        block: suspend (modelId: String) -> T
+    ): T {
+        val candidates = buildCandidateModels(configuredModel)
+        // Order: try each candidate once quickly, then one delayed retry on the lite fallback if all hit transient demand
+        val attempts = candidates + listOf(FALLBACK_LITE_MODEL)
+        var lastError: Throwable? = null
+        return withTimeout(TIMEOUT_MS) {
+            for ((index, modelId) in attempts.withIndex()) {
+                try {
+                    return@withTimeout block(modelId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    lastError = e
+                    Log.w(TAG, "Model '$modelId' failed on attempt ${index + 1}/${attempts.size}: ${e.localizedMessage}")
+                    val canRecover = isTransientCapacityError(e) && index < attempts.lastIndex
+                    if (!canRecover) {
+                        throw e
+                    }
+                    val waitMs = if (index >= candidates.lastIndex) RETRY_DELAY_MS else SWITCH_DELAY_MS
+                    kotlinx.coroutines.delay(waitMs)
+                }
+            }
+            throw (lastError ?: IllegalStateException("AI request failed."))
         }
     }
 
@@ -129,7 +206,6 @@ class AiRepository {
     ): Result<StructuredAiAnswer> {
         return try {
             val safeBitmaps = downscaleBitmapsUnderLimit(bitmaps)
-            val model = createStructuredAnswerModel(remoteConfig)
             val targetLangDesc = if (language == "en") "Academic English" else "Academic Bengali (বাংলা)"
 
             val promptText = buildString {
@@ -148,7 +224,8 @@ class AiRepository {
                 appendLine(questionText.ifBlank { "Please read and solve the academic question shown in the attached image(s)." })
             }
 
-            val response = withTimeout(TIMEOUT_MS) {
+            val response = executeWithModelFallback(remoteConfig.modelName) { modelId ->
+                val model = createStructuredAnswerModel(modelId, remoteConfig)
                 model.generateContent(
                     content {
                         text(promptText)
@@ -191,7 +268,7 @@ class AiRepository {
             Result.success(structured)
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "AI question solver timed out", e)
-            Result.failure(Exception("AI generation timed out after 60 seconds. Please try again."))
+            Result.failure(Exception("সময়সীমা শেষ হয়েছে (60 সেকেন্ড)। অনুগ্রহ করে আবার চেষ্টা করুন।"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -201,7 +278,7 @@ class AiRepository {
                 val diag = diagnoseAppCheckFailure()
                 Result.failure(Exception("$msg\n[$diag]", e))
             } else {
-                Result.failure(e)
+                Result.failure(Exception(formatFriendlyAiError(e), e))
             }
         }
     }
@@ -214,7 +291,6 @@ class AiRepository {
         subjectName: String,
         remoteConfig: AiRemoteConfig
     ): Flow<String> = flow {
-        val model = createTutorModel(remoteConfig)
         val chatHistory = history.takeLast(12).map { msg ->
             content(if (msg.role == "model") "model" else "user") {
                 text(msg.text)
@@ -227,19 +303,45 @@ class AiRepository {
             append(userPrompt)
         }
 
-        val chat = model.startChat(history = chatHistory)
+        val candidates = buildCandidateModels(remoteConfig.modelName)
+        val attempts = candidates + listOf(FALLBACK_LITE_MODEL)
         val accumulated = StringBuilder()
+
         withTimeout(TIMEOUT_MS) {
-            chat.sendMessageStream(contextualPrompt).collect { chunk ->
-                val chunkText = chunk.text.orEmpty()
-                if (chunkText.isNotEmpty()) {
-                    accumulated.append(chunkText)
-                    emit(accumulated.toString())
+            var succeeded = false
+            var lastError: Throwable? = null
+            for ((index, modelId) in attempts.withIndex()) {
+                try {
+                    val model = createTutorModel(modelId, remoteConfig)
+                    val chat = model.startChat(history = chatHistory)
+                    chat.sendMessageStream(contextualPrompt).collect { chunk ->
+                        val chunkText = chunk.text.orEmpty()
+                        if (chunkText.isNotEmpty()) {
+                            accumulated.append(chunkText)
+                            emit(accumulated.toString())
+                        }
+                    }
+                    if (accumulated.isBlank()) {
+                        throw IllegalStateException("AI tutor returned an empty response.")
+                    }
+                    succeeded = true
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    lastError = e
+                    Log.w(TAG, "Tutor stream model '$modelId' failed on attempt ${index + 1}/${attempts.size}: ${e.localizedMessage}")
+                    val canFallback = accumulated.isEmpty() && isTransientCapacityError(e) && index < attempts.lastIndex
+                    if (!canFallback) {
+                        throw e
+                    }
+                    val waitMs = if (index >= candidates.lastIndex) RETRY_DELAY_MS else SWITCH_DELAY_MS
+                    kotlinx.coroutines.delay(waitMs)
                 }
             }
-        }
-        if (accumulated.isBlank()) {
-            throw IllegalStateException("AI tutor returned an empty response.")
+            if (!succeeded) {
+                throw (lastError ?: IllegalStateException("AI tutor returned an empty response."))
+            }
         }
     }.catch { error ->
         if (error is CancellationException && error !is TimeoutCancellationException) {
@@ -247,12 +349,12 @@ class AiRepository {
         }
         Log.e(TAG, "Tutor stream failed", error)
         throw if (error is TimeoutCancellationException) {
-            Exception("Response timed out after 60 seconds. Please try again.", error)
+            Exception("সময়সীমা শেষ হয়েছে (60 সেকেন্ড)। অনুগ্রহ করে আবার চেষ্টা করুন।", error)
         } else if ((error.localizedMessage ?: "").contains("App Check", ignoreCase = true)) {
             val diag = diagnoseAppCheckFailure()
             Exception("${error.localizedMessage}\n[$diag]", error)
         } else {
-            error
+            Exception(formatFriendlyAiError(error), error)
         }
     }
 
@@ -264,20 +366,10 @@ class AiRepository {
         remoteConfig: AiRemoteConfig
     ): Result<List<GeneratedMcqItem>> {
         return try {
-            val model = Firebase.ai.generativeModel(
-                modelName = remoteConfig.modelName.ifBlank { DEFAULT_MODEL },
-                generationConfig = generationConfig {
-                    responseMimeType = "application/json"
-                    responseSchema = mcqArraySchema
-                    temperature = 0.4f
-                },
-                systemInstruction = content {
-                    text(buildSystemInstruction(remoteConfig.systemInstructions))
-                }
-            )
             val langLabel = if (language == "en") "English" else "Bengali (বাংলা)"
             val prompt = "Generate $count National University Honours ($yearLabel) practice MCQs on '$topicOrSubject' in $langLabel. Each MCQ must have exactly 4 distinct options, accurate correctIndex (0-3), and a concise explanation."
-            val response = withTimeout(TIMEOUT_MS) {
+            val response = executeWithModelFallback(remoteConfig.modelName) { modelId ->
+                val model = createMcqModel(modelId, remoteConfig)
                 model.generateContent(prompt)
             }
             val jsonText = response.text
@@ -298,7 +390,7 @@ class AiRepository {
             Result.success(list)
         } catch (e: TimeoutCancellationException) {
             Log.e(TAG, "MCQ generation timed out", e)
-            Result.failure(Exception("MCQ generation timed out after 60 seconds."))
+            Result.failure(Exception("MCQ তৈরির সময়সীমা শেষ হয়েছে। অনুগ্রহ করে আবার চেষ্টা করুন।"))
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -308,7 +400,7 @@ class AiRepository {
                 val diag = diagnoseAppCheckFailure()
                 Result.failure(Exception("$msg\n[$diag]", e))
             } else {
-                Result.failure(e)
+                Result.failure(Exception(formatFriendlyAiError(e), e))
             }
         }
     }

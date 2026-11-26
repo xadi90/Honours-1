@@ -406,3 +406,101 @@ test("AI quota: +1 consumption within 30 free limit, tamper prevention, and purc
     })
   );
 });
+
+test("Sujat Ali Honours College: admin can arrange sections & settings; students read published only", async () => {
+  const studentDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "student@example.com",
+    email_verified: true,
+  }).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", {
+    email: ADMIN_EMAIL,
+    email_verified: true,
+  }).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  // Student cannot edit college profile settings or create college sections
+  await assertFails(
+    studentDb.collection("app_settings").doc("sujat_ali_college").set({
+      collegeNameBn: "Hacked College",
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    studentDb.collection("college_sections").doc("sec_1").set({
+      blockType: "notice",
+      title: "Fake Notice",
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Admin updates college profile & creates published + draft sections
+  await assertSucceeds(
+    adminDb.collection("app_settings").doc("sujat_ali_college").set({
+      collegeNameBn: "সুজাত আলী অনার্স কলেজ, পিংনা",
+      collegeNameEn: "Sujat Ali Honours College, Pingna",
+      heroThemePreset: "emerald_teal",
+      layoutMode: "grid",
+      updatedAt: now,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("college_sections").doc("sec_pub").set({
+      blockType: "notice",
+      title: "অনার্স পরীক্ষার ফর্ম ফিলাপ বিজ্ঞপ্তি",
+      subtitle: "২০২৫ শিক্ষাবর্ষ",
+      body: "নির্ধারিত তারিখের মধ্যে ফর্ম ফিলাপ সম্পন্ন করুন।",
+      badgeText: "জরুরি",
+      iconKey: "campaign",
+      accentStyle: "gold",
+      layoutSpan: "full",
+      actionLabel: "বিস্তারিত",
+      actionUrl: "https://example.com",
+      pinned: true,
+      sortOrder: 1,
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  await assertSucceeds(
+    adminDb.collection("college_sections").doc("sec_draft").set({
+      blockType: "custom",
+      title: "খসড়া রুটিন",
+      subtitle: "",
+      body: "এখনো চূড়ান্ত হয়নি",
+      badgeText: "",
+      iconKey: "schedule",
+      accentStyle: "primary",
+      layoutSpan: "half",
+      actionLabel: "",
+      actionUrl: "",
+      pinned: false,
+      sortOrder: 2,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Admin can reorder section (sortOrder update preserving createdAt)
+  await assertSucceeds(
+    adminDb.collection("college_sections").doc("sec_pub").update({
+      sortOrder: 3,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Student reads college profile & published query succeeds; draft & unfiltered list fail
+  await assertSucceeds(studentDb.collection("app_settings").doc("sujat_ali_college").get());
+  await assertSucceeds(
+    studentDb.collection("college_sections").where("status", "==", "published").get()
+  );
+  await assertFails(studentDb.collection("college_sections").get());
+  await assertFails(studentDb.collection("college_sections").doc("sec_draft").get());
+  await assertSucceeds(adminDb.collection("college_sections").get());
+});
+

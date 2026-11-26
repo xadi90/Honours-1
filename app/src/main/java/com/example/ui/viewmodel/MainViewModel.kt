@@ -10,11 +10,14 @@ import com.example.core.PreferencesManager
 import com.example.core.UpdateChecker
 import com.example.core.toUserFriendlyFirestoreMessage
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.catalog.CollegeSeedCatalog
 import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
+import com.example.data.model.CollegeProfileConfig
+import com.example.data.model.CollegeSectionBlock
 import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.ModelTestResult
 import com.example.data.model.UiState
@@ -113,6 +116,21 @@ class MainViewModel(
                 emit(emptyList())
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
+
+    val collegeProfile: StateFlow<CollegeProfileConfig> = firestoreRepo.observeCollegeProfile()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "sujat_ali_college")
+            emit(CollegeProfileConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), CollegeProfileConfig())
+
+    val collegeSections: StateFlow<List<CollegeSectionBlock>> = firestoreRepo.observePublishedCollegeSections()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "college_sections")
+            emit(CollegeSeedCatalog.starterSections)
+        }
+        .map { list -> list.ifEmpty { CollegeSeedCatalog.starterSections } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), CollegeSeedCatalog.starterSections)
 
     private val _isAdmin = MutableStateFlow(firestoreRepo.isBootstrappedAdminUser())
     val isAdmin: StateFlow<Boolean> = _isAdmin.asStateFlow()

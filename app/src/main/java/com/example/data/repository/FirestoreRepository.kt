@@ -5,6 +5,7 @@ import com.example.R
 import com.example.core.OperationType
 import com.example.core.handleFirestoreError
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.catalog.CollegeSeedCatalog
 import com.example.data.model.AdminLog
 import com.example.data.model.AiConversation
 import com.example.data.model.AiLimitConfig
@@ -15,6 +16,8 @@ import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
 import com.example.data.model.Chapter
+import com.example.data.model.CollegeProfileConfig
+import com.example.data.model.CollegeSectionBlock
 import com.example.data.model.Department
 import com.example.data.model.DeveloperProfileConfig
 import com.example.data.model.ModelTest
@@ -1218,6 +1221,206 @@ class FirestoreRepository(
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, "seed_catalog")
+            Result.failure(e)
+        }
+    }
+
+    // --- Sujat Ali Honours College, Pingna (Customizable Portal) ---
+    fun observeCollegeProfile(): Flow<CollegeProfileConfig> =
+        db.collection("app_settings").document("sujat_ali_college")
+            .snapshots()
+            .map { snap ->
+                val defaults = CollegeProfileConfig()
+                if (!snap.exists()) defaults
+                else CollegeProfileConfig(
+                    collegeNameBn = snap.getString("collegeNameBn")?.takeIf { it.isNotBlank() } ?: defaults.collegeNameBn,
+                    collegeNameEn = snap.getString("collegeNameEn")?.takeIf { it.isNotBlank() } ?: defaults.collegeNameEn,
+                    locationText = snap.getString("locationText")?.takeIf { it.isNotBlank() } ?: defaults.locationText,
+                    affiliationText = snap.getString("affiliationText")?.takeIf { it.isNotBlank() } ?: defaults.affiliationText,
+                    collegeCode = snap.getString("collegeCode").orEmpty(),
+                    mottoText = snap.getString("mottoText").orEmpty(),
+                    noticeTicker = snap.getString("noticeTicker").orEmpty(),
+                    heroThemePreset = snap.getString("heroThemePreset")?.takeIf { it.isNotBlank() } ?: defaults.heroThemePreset,
+                    layoutMode = snap.getString("layoutMode")?.takeIf { it.isNotBlank() } ?: defaults.layoutMode,
+                    showQuickInfoStrip = snap.getBoolean("showQuickInfoStrip") ?: defaults.showQuickInfoStrip,
+                    quickStat1Label = snap.getString("quickStat1Label").orEmpty(),
+                    quickStat1Value = snap.getString("quickStat1Value").orEmpty(),
+                    quickStat2Label = snap.getString("quickStat2Label").orEmpty(),
+                    quickStat2Value = snap.getString("quickStat2Value").orEmpty(),
+                    quickStat3Label = snap.getString("quickStat3Label").orEmpty(),
+                    quickStat3Value = snap.getString("quickStat3Value").orEmpty(),
+                    contactPhone = snap.getString("contactPhone").orEmpty(),
+                    contactEmail = snap.getString("contactEmail").orEmpty(),
+                    websiteUrl = snap.getString("websiteUrl").orEmpty(),
+                    officeHours = snap.getString("officeHours").orEmpty()
+                )
+            }
+
+    suspend fun saveCollegeProfile(config: CollegeProfileConfig): Result<Unit> {
+        val path = "app_settings/sujat_ali_college"
+        val defaults = CollegeProfileConfig()
+        return try {
+            requireUserId()
+            val cleanNameBn = config.collegeNameBn.trim().ifBlank { defaults.collegeNameBn }.take(160)
+            db.document(path).set(
+                mapOf(
+                    "collegeNameBn" to cleanNameBn,
+                    "collegeNameEn" to config.collegeNameEn.trim().ifBlank { defaults.collegeNameEn }.take(160),
+                    "locationText" to config.locationText.trim().ifBlank { defaults.locationText }.take(180),
+                    "affiliationText" to config.affiliationText.trim().ifBlank { defaults.affiliationText }.take(180),
+                    "collegeCode" to config.collegeCode.trim().take(120),
+                    "mottoText" to config.mottoText.trim().take(300),
+                    "noticeTicker" to config.noticeTicker.trim().take(600),
+                    "heroThemePreset" to config.heroThemePreset.ifBlank { defaults.heroThemePreset }.take(40),
+                    "layoutMode" to config.layoutMode.ifBlank { defaults.layoutMode }.take(40),
+                    "showQuickInfoStrip" to config.showQuickInfoStrip,
+                    "quickStat1Label" to config.quickStat1Label.trim().take(60),
+                    "quickStat1Value" to config.quickStat1Value.trim().take(80),
+                    "quickStat2Label" to config.quickStat2Label.trim().take(60),
+                    "quickStat2Value" to config.quickStat2Value.trim().take(80),
+                    "quickStat3Label" to config.quickStat3Label.trim().take(60),
+                    "quickStat3Value" to config.quickStat3Value.trim().take(80),
+                    "contactPhone" to config.contactPhone.trim().take(40),
+                    "contactEmail" to config.contactEmail.trim().take(160),
+                    "websiteUrl" to config.websiteUrl.trim().take(300),
+                    "officeHours" to config.officeHours.trim().take(160),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            ).await()
+            logAdminAction("UPDATE_COLLEGE_PROFILE", "Updated Sujat Ali Honours College layout (${config.layoutMode}, ${config.heroThemePreset})")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    fun observePublishedCollegeSections(): Flow<List<CollegeSectionBlock>> =
+        db.collection("college_sections")
+            .whereEqualTo("status", "published")
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(CollegeSectionBlock::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedWith(compareByDescending<CollegeSectionBlock> { it.pinned }.thenBy { it.sortOrder })
+            }
+
+    fun observeAllCollegeSectionsForAdmin(): Flow<List<CollegeSectionBlock>> =
+        db.collection("college_sections")
+            .snapshots()
+            .map { snap ->
+                snap.toObjects(CollegeSectionBlock::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                    .sortedWith(compareBy<CollegeSectionBlock> { it.sortOrder }.thenByDescending { it.pinned })
+            }
+
+    suspend fun upsertCollegeSection(section: CollegeSectionBlock): Result<Unit> {
+        val docId = section.id.ifBlank { db.collection("college_sections").document().id }
+        val docRef = db.collection("college_sections").document(docId)
+        val allowedTypes = setOf("notice", "principal", "department", "routine", "faculty", "admission", "link", "custom")
+        val allowedIcons = setOf("school", "campaign", "schedule", "groups", "book", "info", "phone", "link", "star")
+        val allowedAccents = setOf("primary", "gold", "emerald", "teal", "crimson")
+        val allowedSpans = setOf("full", "half")
+        return try {
+            requireUserId()
+            val cleanTitle = section.title.trim().take(200)
+            require(cleanTitle.isNotBlank()) { "কার্ডের শিরোনাম লিখুন।" }
+            val existing = docRef.get().await()
+            docRef.set(
+                mapOf(
+                    "blockType" to section.blockType.takeIf { it in allowedTypes }.orEmpty().ifBlank { "custom" },
+                    "title" to cleanTitle,
+                    "subtitle" to section.subtitle.trim().take(250),
+                    "body" to section.body.trim().take(15000),
+                    "badgeText" to section.badgeText.trim().take(50),
+                    "iconKey" to section.iconKey.takeIf { it in allowedIcons }.orEmpty().ifBlank { "school" },
+                    "accentStyle" to section.accentStyle.takeIf { it in allowedAccents }.orEmpty().ifBlank { "primary" },
+                    "layoutSpan" to section.layoutSpan.takeIf { it in allowedSpans }.orEmpty().ifBlank { "full" },
+                    "actionLabel" to section.actionLabel.trim().take(80),
+                    "actionUrl" to section.actionUrl.trim().take(500),
+                    "pinned" to section.pinned,
+                    "sortOrder" to section.sortOrder,
+                    "status" to if (section.status == "draft") "draft" else "published",
+                    "createdAt" to (existing.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            logAdminAction("UPSERT_COLLEGE_SECTION", "${section.blockType}: $cleanTitle")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, docRef.path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteCollegeSection(sectionId: String): Result<Unit> {
+        val path = "college_sections/$sectionId"
+        return try {
+            requireUserId()
+            db.document(path).delete().await()
+            logAdminAction("DELETE_COLLEGE_SECTION", "Deleted college section $sectionId")
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, path)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun swapCollegeSectionOrder(
+        first: CollegeSectionBlock,
+        second: CollegeSectionBlock
+    ): Result<Unit> {
+        val firstRef = db.collection("college_sections").document(first.id)
+        val secondRef = db.collection("college_sections").document(second.id)
+        return try {
+            requireUserId()
+            val firstNewOrder = if (first.sortOrder == second.sortOrder) second.sortOrder + 1L else second.sortOrder
+            val secondNewOrder = if (first.sortOrder == second.sortOrder) first.sortOrder else first.sortOrder
+            db.runBatch { batch ->
+                batch.update(
+                    firstRef,
+                    mapOf(
+                        "sortOrder" to firstNewOrder,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+                batch.update(
+                    secondRef,
+                    mapOf(
+                        "sortOrder" to secondNewOrder,
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }.await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "college_sections/reorder")
+            Result.failure(e)
+        }
+    }
+
+    suspend fun seedDefaultCollegeToFirestore(): Result<Int> {
+        return try {
+            requireUserId()
+            saveCollegeProfile(CollegeSeedCatalog.defaultProfile).getOrThrow()
+            var count = 0
+            for (section in CollegeSeedCatalog.starterSections) {
+                upsertCollegeSection(section).getOrThrow()
+                count++
+            }
+            logAdminAction("SEED_COLLEGE_PORTAL", "Published Sujat Ali Honours College template ($count sections)")
+            Result.success(count)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "college_sections/seed")
             Result.failure(e)
         }
     }
