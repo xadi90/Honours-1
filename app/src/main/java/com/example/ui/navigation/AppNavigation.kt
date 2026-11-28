@@ -78,9 +78,11 @@ import com.example.core.ensureFirebaseReady
 import com.example.core.signOut
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AnswerLength
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.UiState
 import com.example.data.repository.AiRepository
 import com.example.data.repository.FirestoreRepository
+import com.example.data.repository.observeAuthPolicy
 import com.example.ui.components.OfflineStatusBanner
 import com.example.ui.screens.admin.AdminAiLimitScreen
 import com.example.ui.screens.admin.AdminAnnouncementScreen
@@ -96,6 +98,7 @@ import com.example.ui.screens.ai.AiQuestionSolverScreen
 import com.example.ui.screens.ai.AnswerDetailsScreen
 import com.example.ui.screens.ai.QuestionImageUploadScreen
 import com.example.ui.screens.auth.AuthScreen
+import com.example.ui.screens.auth.EmailOtpVerificationScreen
 import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.auth.OnboardingScreen
 import com.example.ui.screens.auth.SplashScreen
@@ -161,6 +164,7 @@ fun HonoursSolutionApp() {
 
     val themeMode by prefs.themeMode.collectAsStateWithLifecycle(initialValue = AppThemeMode.SYSTEM)
     val onboardingDone by prefs.onboardingCompleted.collectAsStateWithLifecycle(initialValue = true)
+    val verifiedOtpUid by prefs.verifiedOtpUid.collectAsStateWithLifecycle(initialValue = null)
     val currentUserFlow = remember(firebaseReady) {
         if (firebaseReady) Firebase.auth.authStateFlow() else kotlinx.coroutines.flow.flowOf(null)
     }
@@ -168,6 +172,21 @@ fun HonoursSolutionApp() {
         if (firebaseReady) runCatching { Firebase.auth.currentUser }.getOrNull() else null
     }
     val currentUser by currentUserFlow.collectAsStateWithLifecycle(initialValue = initialAuthUser)
+
+    val authRepo = remember(appContext, firebaseReady) {
+        if (firebaseReady) runCatching { FirestoreRepository(appContext) }.getOrNull() else null
+    }
+    val authPolicyFlow = remember(authRepo, currentUser?.uid) {
+        if (authRepo != null && currentUser != null) {
+            authRepo.observeAuthPolicy()
+        } else {
+            kotlinx.coroutines.flow.flowOf(AuthPolicyConfig(requireEmailOtp = true))
+        }
+    }
+    val authPolicy by authPolicyFlow.collectAsStateWithLifecycle(initialValue = AuthPolicyConfig(requireEmailOtp = true))
+    val credentialManager = remember(context) {
+        runCatching { CredentialManager.create(context) }.getOrNull()
+    }
 
     var splashFinished by remember { mutableStateOf(false) }
 
@@ -191,11 +210,30 @@ fun HonoursSolutionApp() {
             }
             else -> {
                 currentUser?.let { activeUser ->
-                    key(activeUser.uid) {
-                        MainAuthenticatedShell(
-                            currentUserId = activeUser.uid,
-                            prefs = prefs
-                        )
+                    val needsEmailOtp = authPolicy.requireEmailOtp && verifiedOtpUid != activeUser.uid
+                    if (needsEmailOtp) {
+                        val isAdminEmail = activeUser.isEmailVerified &&
+                            activeUser.email?.lowercase() in setOf("xadiahmed7@gmail.com", "xadiahmed23@gmail.com")
+                        key("otp_${activeUser.uid}") {
+                            EmailOtpVerificationScreen(
+                                email = activeUser.email.orEmpty(),
+                                isBootstrappedAdmin = isAdminEmail,
+                                onVerified = {
+                                    scope.launch { prefs.setVerifiedOtpUid(activeUser.uid) }
+                                },
+                                onSignOut = {
+                                    scope.launch { prefs.clearUserSessionData() }
+                                    signOut(credentialManager, scope)
+                                }
+                            )
+                        }
+                    } else {
+                        key(activeUser.uid) {
+                            MainAuthenticatedShell(
+                                currentUserId = activeUser.uid,
+                                prefs = prefs
+                            )
+                        }
                     }
                 }
             }
@@ -277,6 +315,8 @@ private fun MainAuthenticatedShell(
     val collegeProfile by mainViewModel.collegeProfile.collectAsStateWithLifecycle()
     val collegeSections by mainViewModel.collegeSections.collectAsStateWithLifecycle()
     val isBackendAdmin by mainViewModel.isAdmin.collectAsStateWithLifecycle()
+    val isCollegeModerator by mainViewModel.isCollegeModerator.collectAsStateWithLifecycle()
+    val canCustomizeCollege = isBackendAdmin || isCollegeModerator
     val updateState by mainViewModel.updateState.collectAsStateWithLifecycle()
     val mainActionMsg by mainViewModel.actionMessage.collectAsStateWithLifecycle()
 
@@ -999,10 +1039,10 @@ private fun MainAuthenticatedShell(
                         SujatAliCollegeScreen(
                             config = collegeProfile,
                             sections = collegeSections,
-                            isBackendAdmin = isBackendAdmin,
+                            isBackendAdmin = canCustomizeCollege,
                             onBackClick = { navController.popBackStack() },
                             onCustomizeClick = {
-                                if (isAdminAuthorized) {
+                                if (isAdminAuthorized || isCollegeModerator) {
                                     navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR)
                                 } else {
                                     navController.navigate(AppRoutes.ADMIN_PASSWORD)
@@ -1053,6 +1093,7 @@ private fun MainAuthenticatedShell(
                         val adminDepartments by adminViewModel.adminDepartments.collectAsStateWithLifecycle()
                         val adminSubjects by adminViewModel.adminSubjects.collectAsStateWithLifecycle()
                         val adminPdfs by adminViewModel.adminPdfs.collectAsStateWithLifecycle()
+                        val adminAuthPolicy by adminViewModel.authPolicy.collectAsStateWithLifecycle()
                         val openReportsCount = (reportsState as? UiState.Success)?.data?.count { it.status == "open" } ?: 0
                         val pendingPurchasesCount = (purchaseRequestsState as? UiState.Success)?.data?.count { it.status == "pending" } ?: 0
                         AdminDashboardScreen(
@@ -1079,7 +1120,9 @@ private fun MainAuthenticatedShell(
                             onNavigateAiLimits = { navController.navigate(AppRoutes.ADMIN_LIMIT_MANAGEMENT) },
                             onNavigateCollegeEditor = { navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR) },
                             userUsageSummary = usageSummary,
-                            onSeedAllPdfs = { adminViewModel.seedAllHonoursPdfs() }
+                            onSeedAllPdfs = { adminViewModel.seedAllHonoursPdfs() },
+                            authPolicy = adminAuthPolicy,
+                            onSaveAuthPolicy = { adminViewModel.saveAuthPolicy(it) }
                         )
                     }
 
@@ -1151,13 +1194,15 @@ private fun MainAuthenticatedShell(
                     }
 
                     composable(AppRoutes.ADMIN_COLLEGE_EDITOR) {
-                        LaunchedEffect(isAdminAuthorized) {
-                            if (!isAdminAuthorized) {
+                        val isMod by adminViewModel.isCollegeModerator.collectAsStateWithLifecycle()
+                        LaunchedEffect(isAdminAuthorized, isMod) {
+                            if (!isAdminAuthorized && !isMod) {
                                 navController.popBackStack()
                             }
                         }
                         val adminCollegeProfile by adminViewModel.collegeProfile.collectAsStateWithLifecycle()
                         val adminCollegeSections by adminViewModel.adminCollegeSections.collectAsStateWithLifecycle()
+                        val moderators by adminViewModel.collegeModerators.collectAsStateWithLifecycle()
                         AdminCollegeEditorScreen(
                             config = adminCollegeProfile,
                             sections = adminCollegeSections,
@@ -1168,7 +1213,13 @@ private fun MainAuthenticatedShell(
                             onDeleteSection = { adminViewModel.deleteCollegeSection(it) },
                             onMoveSection = { index, dir -> adminViewModel.moveCollegeSection(index, dir) },
                             onToggleSectionStatus = { adminViewModel.toggleCollegeSectionStatus(it) },
-                            onSeedStarterTemplate = { adminViewModel.seedCollegeStarterData() }
+                            onSeedStarterTemplate = { adminViewModel.seedCollegeStarterData() },
+                            isMainAdmin = isBackendAdmin && isAdminAuthorized,
+                            moderators = moderators,
+                            onSaveModerator = { email, name, note, active ->
+                                adminViewModel.saveCollegeModerator(email, name, note, active)
+                            },
+                            onDeleteModerator = { email -> adminViewModel.deleteCollegeModerator(email) }
                         )
                     }
                 }

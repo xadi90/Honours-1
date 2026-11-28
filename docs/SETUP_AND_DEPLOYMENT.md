@@ -24,13 +24,31 @@
    - The app reads live `modelName`, `systemInstructions`, and `maintenanceMode` from `app_settings/ai_config`, editable directly from the Admin Dashboard.
    - Optionally enable Firebase Remote Config in Firebase Console for staged rollouts.
 
-## 2. Cloud Functions Deployment (`/functions`)
+## 2. Cloud Functions Deployment (`/functions`) — Admin PIN & 5-Digit Email Login OTP
+To enable live 5-digit email verification codes on Google Sign-In (`sendLoginOtp` and `verifyLoginOtp`), set your SMTP credentials (for example, a Gmail address with an App Password) in Firebase Functions environment configuration / `.env`:
+
 ```bash
 cd functions
 npm install
+
+# Configure SMTP variables in functions/.env (or Firebase Secrets) before deploying:
+# SMTP_HOST=smtp.gmail.com
+# SMTP_PORT=465
+# SMTP_USER=your-sender@gmail.com
+# SMTP_PASS=your-16-char-gmail-app-password
+# SMTP_FROM=your-sender@gmail.com
+
 firebase deploy --only functions
 ```
-This deploys `verifyAdminPassword` (server-side rate-limited PIN verification with App Check enforcement) and `grantAdminRole` to your Firebase project.
+This deploys:
+- `verifyAdminPassword` & `grantAdminRole` (server-side rate-limited Admin PIN verification & role management).
+- `sendLoginOtp` & `verifyLoginOtp` (generates a cryptographically random 5-digit code, stores only a salted SHA-256 hash in `email_verifications/{uid}` with 60s resend cooldown, 5-minute expiry, and 5-attempt lockout, and sends the code to the signed-in user's email via Nodemailer).
+
+> **Note for Main Admin:** Until `sendLoginOtp` and `verifyLoginOtp` are deployed with SMTP credentials, the Admin Dashboard includes an **ইমেইল ভেরিফিকেশন (৫ সংখ্যার OTP কোড)** toggle (`app_settings/auth_policy`) and an Admin-only setup bypass button on the OTP screen so you are never locked out.
+
+### Sujat Ali Honours College Moderators & Photo Uploads
+- **Dedicated Moderators:** In **Admin Panel → সুজাত আলী কলেজ সাজান → মডারেটর**, the main Admin can add, pause/resume, or remove Gmail addresses as college moderators (`college_moderators/{email}`). Moderators can customize only the Sujat Ali Honours College interface and upload photos, with **zero access** to `/users`, user emails/names, or academic collections.
+- **Zero-Permission Photo Uploads:** Admins and active College Moderators can upload campus banner or section card photos via the Android Photo Picker (`PickVisualMedia`) or `https://` URLs.
 
 ## 3. Automated APK Build & Direct Download Link (`xadi90/Honours-1`)
 This repository includes `.github/workflows/build-apk.yml`, which automatically builds `HonoursSolution.apk` and attaches it to GitHub Releases on every push to `main`/`master` (or manual run in the **Actions** tab).

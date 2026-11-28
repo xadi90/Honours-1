@@ -36,6 +36,30 @@ service cloud.firestore {
         (isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
     }
 
+    function isValidEmailDocId(id) {
+      return id is string &&
+        id.size() >= 5 &&
+        id.size() <= 160 &&
+        id.matches('^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$');
+    }
+
+    function hasVerifiedEmail() {
+      return isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email is string &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isCollegeModerator() {
+      return hasVerifiedEmail() &&
+        exists(/databases/$(database)/documents/college_moderators/$(request.auth.token.email.lower())) &&
+        get(/databases/$(database)/documents/college_moderators/$(request.auth.token.email.lower())).data.active == true;
+    }
+
+    function isCollegeManager() {
+      return isAdmin() || isCollegeModerator();
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -292,6 +316,14 @@ service cloud.firestore {
         isValidTimestamp(data.updatedAt);
     }
 
+    function isValidCollegeImage(url) {
+      return url is string && (
+        url == '' ||
+        (url.size() <= 1000 && url.matches('^https://.*')) ||
+        (url.size() <= 450000 && url.matches('^data:image/(jpeg|jpg|png|webp);base64,[A-Za-z0-9+/=]+$'))
+      );
+    }
+
     function isValidCollegeSection(data) {
       return data.blockType in ['notice', 'principal', 'department', 'routine', 'faculty', 'admission', 'link', 'custom'] &&
         isBoundedString(data.title, 1, 200) &&
@@ -303,6 +335,7 @@ service cloud.firestore {
         (!('layoutSpan' in data) || data.layoutSpan in ['full', 'half']) &&
         (!('actionLabel' in data) || isBoundedString(data.actionLabel, 0, 80)) &&
         (!('actionUrl' in data) || isBoundedString(data.actionUrl, 0, 500)) &&
+        (!('imageUrl' in data) || isValidCollegeImage(data.imageUrl)) &&
         (!('pinned' in data) || data.pinned is bool) &&
         (!('sortOrder' in data) || data.sortOrder is int) &&
         isValidStatus(data.status) &&
@@ -310,9 +343,20 @@ service cloud.firestore {
         isValidTimestamp(data.updatedAt);
     }
 
+    function isValidCollegeModerator(data, moderatorEmail) {
+      return isBoundedString(data.email, 5, 160) &&
+        data.email.lower() == moderatorEmail &&
+        (!('displayName' in data) || isBoundedString(data.displayName, 0, 120)) &&
+        (!('note' in data) || isBoundedString(data.note, 0, 300)) &&
+        data.active is bool &&
+        (!('addedByEmail' in data) || isBoundedString(data.addedByEmail, 0, 160)) &&
+        isValidTimestamp(data.createdAt) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
     // --- User Scoped Collections ---
     match /users/{userId} {
-      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow get: if isValidId(userId) && (isOwner(userId) || isBootstrappedAdmin());
       allow list: if isBootstrappedAdmin();
       allow create: if isOwner(userId) &&
         isValidId(userId) &&
@@ -475,11 +519,27 @@ service cloud.firestore {
     }
 
     match /college_sections/{sectionId} {
-      allow get: if isSignedIn() && isValidId(sectionId) && (existing().status == 'published' || isAdmin());
-      allow list: if isSignedIn() && (existing().status == 'published' || isBootstrappedAdmin());
-      allow create: if isAdmin() && isValidId(sectionId) && isValidCollegeSection(incoming());
-      allow update: if isAdmin() && isValidId(sectionId) && incoming().createdAt == existing().createdAt && isValidCollegeSection(incoming());
-      allow delete: if isAdmin() && isValidId(sectionId);
+      allow get: if isSignedIn() && isValidId(sectionId) && (existing().status == 'published' || isCollegeManager());
+      allow list: if isSignedIn() && (existing().status == 'published' || isCollegeManager());
+      allow create: if isCollegeManager() && isValidId(sectionId) && isValidCollegeSection(incoming());
+      allow update: if isCollegeManager() && isValidId(sectionId) && incoming().createdAt == existing().createdAt && isValidCollegeSection(incoming());
+      allow delete: if isCollegeManager() && isValidId(sectionId);
+    }
+
+    match /college_moderators/{moderatorEmail} {
+      allow get: if hasVerifiedEmail() && isValidEmailDocId(moderatorEmail) &&
+        (moderatorEmail == request.auth.token.email.lower() || isBootstrappedAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create: if isBootstrappedAdmin() && isValidEmailDocId(moderatorEmail) &&
+        isValidCollegeModerator(incoming(), moderatorEmail);
+      allow update: if isBootstrappedAdmin() && isValidEmailDocId(moderatorEmail) &&
+        incoming().createdAt == existing().createdAt &&
+        isValidCollegeModerator(incoming(), moderatorEmail);
+      allow delete: if isBootstrappedAdmin() && isValidEmailDocId(moderatorEmail);
+    }
+
+    match /email_verifications/{userId} {
+      allow read, write: if false;
     }
 
     // --- Admin, Settings, Reports & Audit Logs ---
@@ -492,7 +552,23 @@ service cloud.firestore {
     match /app_settings/{settingId} {
       allow get: if isSignedIn() && isValidId(settingId) && (settingId != 'admin_security' || isAdmin());
       allow list: if isBootstrappedAdmin();
-      allow write: if isAdmin() && isValidId(settingId);
+      allow write: if isValidId(settingId) && (
+        (
+          settingId == 'sujat_ali_college' &&
+          isCollegeManager() &&
+          (!('heroImageUrl' in incoming()) || isValidCollegeImage(incoming().heroImageUrl))
+        ) ||
+        (
+          settingId == 'auth_policy' &&
+          isBootstrappedAdmin() &&
+          (!('requireEmailOtp' in incoming()) || incoming().requireEmailOtp is bool)
+        ) ||
+        (
+          settingId != 'sujat_ali_college' &&
+          settingId != 'auth_policy' &&
+          isAdmin()
+        )
+      );
     }
 
     match /user_reports/{reportId} {

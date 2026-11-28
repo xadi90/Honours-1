@@ -560,4 +560,135 @@ test("User data anti-theft isolation & admin-only usage count listing", async ()
   }
 });
 
+test("College moderators: scoped solely to Sujat Ali College, denied on /users & academic data; /email_verifications locked", async () => {
+  const MOD_EMAIL = "college.mod@example.com";
+  const modDb = testEnv.authenticatedContext("mod_uid_1", {
+    email: MOD_EMAIL,
+    email_verified: true,
+  }).firestore();
+  const studentDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@example.com",
+    email_verified: true,
+  }).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", {
+    email: ADMIN_EMAIL,
+    email_verified: true,
+  }).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  // Student cannot add or list college moderators
+  await assertFails(
+    studentDb.collection("college_moderators").doc(MOD_EMAIL).set({
+      email: MOD_EMAIL,
+      displayName: "Unauthorized",
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(studentDb.collection("college_moderators").get());
+
+  // Bootstrapped admin adds an active college moderator
+  await assertSucceeds(
+    adminDb.collection("college_moderators").doc(MOD_EMAIL).set({
+      email: MOD_EMAIL,
+      displayName: "Pingna Representative",
+      note: "College Coordinator",
+      active: true,
+      addedByEmail: ADMIN_EMAIL,
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Moderator can read own moderator doc, but cannot list all moderators or read other users
+  await assertSucceeds(modDb.collection("college_moderators").doc(MOD_EMAIL).get());
+  await assertFails(modDb.collection("college_moderators").get());
+  await assertFails(studentDb.collection("college_moderators").doc(MOD_EMAIL).get());
+  await assertFails(modDb.collection("users").get());
+  await assertFails(modDb.collection("users").doc(ALICE_UID).get());
+
+  // Moderator CANNOT write departments, pdf_library, or auth_policy
+  await assertFails(
+    modDb.collection("departments").doc("pol_sci").set({
+      nameBn: "রাষ্ট্রবিজ্ঞান",
+      nameEn: "Political Science",
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    modDb.collection("app_settings").doc("auth_policy").set({
+      requireEmailOtp: false,
+      updatedAt: now,
+    })
+  );
+
+  // Active moderator CAN customize Sujat Ali College banner + upload valid image (data URI or https://)
+  await assertSucceeds(
+    modDb.collection("app_settings").doc("sujat_ali_college").set({
+      collegeNameBn: "সুজাত আলী অনার্স কলেজ, পিংনা",
+      heroImageUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==",
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    modDb.collection("college_sections").doc("sec_photo_1").set({
+      blockType: "notice",
+      title: "ক্যাম্পাস ছবি",
+      imageUrl: "https://example.com/campus.jpg",
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Invalid image URL (plain http:// or non-image data URI) is rejected even for manager
+  await assertFails(
+    modDb.collection("college_sections").doc("sec_bad_img").set({
+      blockType: "notice",
+      title: "Bad Image",
+      imageUrl: "http://insecure.example.com/photo.jpg",
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Pausing moderator revokes Sujat Ali College write permissions immediately
+  await assertSucceeds(
+    adminDb.collection("college_moderators").doc(MOD_EMAIL).update({
+      active: false,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertFails(
+    modDb.collection("college_sections").doc("sec_photo_2").set({
+      blockType: "notice",
+      title: "Paused Mod Attempt",
+      status: "published",
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Bootstrapped admin controls auth_policy
+  await assertSucceeds(
+    adminDb.collection("app_settings").doc("auth_policy").set({
+      requireEmailOtp: true,
+      updatedAt: now,
+    })
+  );
+
+  // /email_verifications is completely blocked from all client reads/writes (even admin)
+  await assertFails(studentDb.collection("email_verifications").doc(ALICE_UID).get());
+  await assertFails(
+    studentDb.collection("email_verifications").doc(ALICE_UID).set({ codeHash: "fake" })
+  );
+  await assertFails(adminDb.collection("email_verifications").doc(ALICE_UID).get());
+  await assertFails(
+    adminDb.collection("email_verifications").doc(ALICE_UID).set({ codeHash: "fake" })
+  );
+});
 

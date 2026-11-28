@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Info
@@ -64,11 +65,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import com.example.core.CollegeImage
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.model.CollegeSectionBlock
 import com.example.ui.components.EmptyStateView
@@ -98,6 +102,7 @@ fun SujatAliCollegeScreen(
 ) {
     val context = LocalContext.current
     var selectedFilter by remember { mutableStateOf("all") }
+    var zoomedImagePair by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     val filterOptions = remember {
         listOf(
@@ -171,7 +176,8 @@ fun SujatAliCollegeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 840.dp)
-                .align(Alignment.CenterHorizontally),
+                .align(Alignment.CenterHorizontally)
+                .testTag("college_content_list"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -180,7 +186,12 @@ fun SujatAliCollegeScreen(
                 CollegeHeroBanner(
                     config = config,
                     isBackendAdmin = isBackendAdmin,
-                    onCustomizeClick = onCustomizeClick
+                    onCustomizeClick = onCustomizeClick,
+                    onImageClick = {
+                        if (config.heroImageUrl.isNotBlank()) {
+                            zoomedImagePair = config.heroImageUrl to config.collegeNameBn
+                        }
+                    }
                 )
             }
 
@@ -384,13 +395,15 @@ fun SujatAliCollegeScreen(
                     if (config.layoutMode == "compact" && rowBlocks.size == 1) {
                         CollegeCompactCard(
                             block = rowBlocks.first(),
-                            onActionClick = { launchAction(it) }
+                            onActionClick = { launchAction(it) },
+                            onImageClick = { imgUrl, title -> zoomedImagePair = imgUrl to title }
                         )
                     } else if (rowBlocks.size == 1) {
                         CollegeSectionCard(
                             block = rowBlocks.first(),
                             isCompactGrid = false,
                             onActionClick = { launchAction(it) },
+                            onImageClick = { imgUrl, title -> zoomedImagePair = imgUrl to title },
                             modifier = Modifier.fillMaxWidth()
                         )
                     } else {
@@ -403,6 +416,7 @@ fun SujatAliCollegeScreen(
                                     block = block,
                                     isCompactGrid = true,
                                     onActionClick = { launchAction(it) },
+                                    onImageClick = { imgUrl, title -> zoomedImagePair = imgUrl to title },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -415,13 +429,52 @@ fun SujatAliCollegeScreen(
             }
         }
     }
+
+    zoomedImagePair?.let { (imageSrc, caption) ->
+        Dialog(onDismissRequest = { zoomedImagePair = null }) {
+            Card(
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = caption,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { zoomedImagePair = null }) {
+                            Icon(Icons.Default.Close, contentDescription = "বন্ধ করুন")
+                        }
+                    }
+                    CollegeImage(
+                        imageSource = imageSrc,
+                        contentDescription = caption,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(340.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
 private fun CollegeHeroBanner(
     config: CollegeProfileConfig,
     isBackendAdmin: Boolean,
-    onCustomizeClick: () -> Unit
+    onCustomizeClick: () -> Unit,
+    onImageClick: () -> Unit
 ) {
     val gradientColors = when (config.heroThemePreset) {
         "emerald_teal" -> listOf(Color(0xFF064E3B), Color(0xFF0F766E))
@@ -525,6 +578,21 @@ private fun CollegeHeroBanner(
                     color = Color.White.copy(alpha = 0.92f)
                 )
             }
+
+            if (config.heroImageUrl.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                CollegeImage(
+                    imageSource = config.heroImageUrl,
+                    contentDescription = "${config.collegeNameBn} ক্যাম্পাস ছবি",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(175.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable(onClick = onImageClick)
+                        .testTag("college_hero_image")
+                )
+            }
         }
     }
 }
@@ -534,6 +602,7 @@ private fun CollegeSectionCard(
     block: CollegeSectionBlock,
     isCompactGrid: Boolean,
     onActionClick: (String) -> Unit,
+    onImageClick: (String, String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = resolveBlockAccent(block.accentStyle)
@@ -627,6 +696,20 @@ private fun CollegeSectionCard(
                 )
             }
 
+            if (block.imageUrl.isNotBlank()) {
+                CollegeImage(
+                    imageSource = block.imageUrl,
+                    contentDescription = block.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (isCompactGrid) 125.dp else 185.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable { onImageClick(block.imageUrl, block.title) }
+                        .testTag("college_section_image_${block.id}")
+                )
+            }
+
             if (block.actionLabel.isNotBlank() && block.actionUrl.isNotBlank()) {
                 Spacer(modifier = Modifier.height(2.dp))
                 Button(
@@ -649,7 +732,8 @@ private fun CollegeSectionCard(
 @Composable
 private fun CollegeCompactCard(
     block: CollegeSectionBlock,
-    onActionClick: (String) -> Unit
+    onActionClick: (String) -> Unit,
+    onImageClick: (String, String) -> Unit
 ) {
     val palette = resolveBlockAccent(block.accentStyle)
     var expanded by remember(block.id) { mutableStateOf(block.pinned) }
@@ -704,6 +788,19 @@ private fun CollegeCompactCard(
                     text = block.body,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (expanded && block.imageUrl.isNotBlank()) {
+                CollegeImage(
+                    imageSource = block.imageUrl,
+                    contentDescription = block.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(160.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onImageClick(block.imageUrl, block.title) }
+                        .testTag("college_compact_image_${block.id}")
                 )
             }
             if (expanded && block.actionLabel.isNotBlank() && block.actionUrl.isNotBlank()) {

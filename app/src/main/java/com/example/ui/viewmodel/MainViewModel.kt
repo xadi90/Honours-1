@@ -15,6 +15,7 @@ import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.BookmarkItem
 import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.CollegeProfileConfig
@@ -25,7 +26,9 @@ import com.example.data.model.UiState
 import com.example.data.model.UserProfile
 import com.example.data.repository.FirestoreRepository
 import com.example.data.repository.mergeCatalogItems
+import com.example.data.repository.observeAuthPolicy
 import com.example.data.repository.observeCatalogMeta
+import com.example.data.repository.observeIsCollegeModerator
 import com.example.ui.theme.AppThemeMode
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -146,6 +149,20 @@ class MainViewModel(
 
     private val _isAdmin = MutableStateFlow(firestoreRepo.isBootstrappedAdminUser())
     val isAdmin: StateFlow<Boolean> = _isAdmin.asStateFlow()
+
+    val isCollegeModerator: StateFlow<Boolean> = firestoreRepo.observeIsCollegeModerator()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "college_moderators")
+            emit(false)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    val authPolicy: StateFlow<AuthPolicyConfig> = firestoreRepo.observeAuthPolicy()
+        .catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "auth_policy")
+            emit(AuthPolicyConfig(requireEmailOtp = true))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AuthPolicyConfig(requireEmailOtp = true))
 
     private val _updateState = MutableStateFlow<UiState<AppUpdateInfo>>(UiState.Idle)
     val updateState: StateFlow<UiState<AppUpdateInfo>> = _updateState.asStateFlow()

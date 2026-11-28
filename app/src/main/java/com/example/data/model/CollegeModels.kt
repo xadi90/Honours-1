@@ -28,7 +28,8 @@ data class CollegeProfileConfig(
     val contactPhone: String = "",
     val contactEmail: String = "",
     val websiteUrl: String = "",
-    val officeHours: String = "রবিবার – বৃহস্পতিবার • সকাল ৯:০০ – বিকাল ৪:০০"
+    val officeHours: String = "রবিবার – বৃহস্পতিবার • সকাল ৯:০০ – বিকাল ৪:০০",
+    val heroImageUrl: String = ""
 )
 
 @Keep
@@ -45,9 +46,23 @@ data class CollegeSectionBlock(
     val layoutSpan: String = "full", // full | half
     val actionLabel: String = "",
     val actionUrl: String = "",
+    val imageUrl: String = "",
     val pinned: Boolean = false,
     val sortOrder: Long = 0L,
     val status: String = "published", // published | draft
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+)
+
+@Keep
+@IgnoreExtraProperties
+data class CollegeModerator(
+    @DocumentId val id: String = "",
+    val email: String = "",
+    val displayName: String = "",
+    val note: String = "",
+    val active: Boolean = true,
+    val addedByEmail: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )

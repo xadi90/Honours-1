@@ -50,6 +50,10 @@ class AppStartupRobolectricTest {
             composeRule.onNodeWithTag("onboarding_skip_button").performClick()
             composeRule.waitForIdle()
         }
+        composeRule.waitUntil(timeoutMillis = 5000L) {
+            composeRule.onAllNodes(hasTestTag("google_sign_in_button"), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithTag("google_sign_in_button", useUnmergedTree = true)
             .assertExists()
             .assertHasClickAction()

@@ -16,8 +16,10 @@ import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Chapter
+import com.example.data.model.CollegeModerator
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.model.CollegeSectionBlock
 import com.example.data.model.Department
@@ -29,6 +31,7 @@ import com.example.data.model.UiState
 import com.example.data.model.UserReport
 import com.example.data.repository.FirestoreRepository
 import com.example.data.repository.deleteChapter
+import com.example.data.repository.deleteCollegeModerator
 import com.example.data.repository.deleteQuestion
 import com.example.data.repository.mergeCatalogItems
 import com.example.data.repository.observeAdminUserUsageSummary
@@ -38,8 +41,13 @@ import com.example.data.repository.observeAllDepartmentsForAdmin
 import com.example.data.repository.observeAllPdfsForAdmin
 import com.example.data.repository.observeAllQuestionsForAdmin
 import com.example.data.repository.observeAllSubjectsForAdmin
+import com.example.data.repository.observeAuthPolicy
 import com.example.data.repository.observeCatalogMeta
+import com.example.data.repository.observeCollegeModerators
+import com.example.data.repository.observeIsCollegeModerator
+import com.example.data.repository.saveAuthPolicy
 import com.example.data.repository.seedAllHonoursPdfsToFirestore
+import com.example.data.repository.upsertCollegeModerator
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -169,6 +177,37 @@ class AdminViewModel(
             emit(AdminUserUsageSummary())
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AdminUserUsageSummary())
+
+    val isCollegeModerator: StateFlow<Boolean> = firestoreRepo.observeIsCollegeModerator()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(false)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), false)
+
+    val authPolicy: StateFlow<AuthPolicyConfig> = firestoreRepo.observeAuthPolicy()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(AuthPolicyConfig(requireEmailOtp = true))
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AuthPolicyConfig(requireEmailOtp = true))
+
+    val collegeModerators: StateFlow<List<CollegeModerator>> = firestoreRepo.observeCollegeModerators()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            Log.w(TAG, "Unable to load college moderators", firestoreErr ?: err)
+            emit(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
     val adminDepartments: StateFlow<List<Department>> = combine(
         firestoreRepo.observeAllDepartmentsForAdmin()
@@ -550,6 +589,38 @@ class AdminViewModel(
             firestoreRepo.seedDefaultCollegeToFirestore()
                 .onSuccess { count -> _adminToast.value = "সুজাত আলী কলেজের $count টি প্রারম্ভিক কার্ড Firestore-এ যুক্ত হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("টেমপ্লেট লোড করা যায়নি।") }
+        }
+    }
+
+    fun saveAuthPolicy(config: AuthPolicyConfig) {
+        viewModelScope.launch {
+            firestoreRepo.saveAuthPolicy(config)
+                .onSuccess {
+                    _adminToast.value = if (config.requireEmailOtp) {
+                        "লগইনে ৫ সংখ্যার ইমেইল ভেরিফিকেশন কোড সক্রিয় করা হয়েছে।"
+                    } else {
+                        "লগইনে ইমেইল OTP নীতি বন্ধ করা হয়েছে।"
+                    }
+                }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("অথেনটিকেশন নীতি সংরক্ষণ করা যায়নি।") }
+        }
+    }
+
+    fun saveCollegeModerator(email: String, displayName: String, note: String, active: Boolean) {
+        viewModelScope.launch {
+            firestoreRepo.upsertCollegeModerator(email, displayName, note, active)
+                .onSuccess {
+                    _adminToast.value = "সুজাত আলী কলেজের মডারেটর (${email.trim().lowercase()}) সংরক্ষণ করা হয়েছে।"
+                }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("মডারেটর যুক্ত করা যায়নি।") }
+        }
+    }
+
+    fun deleteCollegeModerator(email: String) {
+        viewModelScope.launch {
+            firestoreRepo.deleteCollegeModerator(email)
+                .onSuccess { _adminToast.value = "কলেজ মডারেটর মুছে ফেলা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("মডারেটর মুছে ফেলা যায়নি।") }
         }
     }
 }

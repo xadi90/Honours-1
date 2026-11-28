@@ -33,6 +33,7 @@ class PreferencesManager(private val context: Context) {
         val ADMIN_FAILED_ATTEMPTS = intPreferencesKey("admin_failed_attempts")
         val ADMIN_LOCKOUT_UNTIL_MS = longPreferencesKey("admin_lockout_until_ms")
         val ADMIN_UNLOCKED_UNTIL_MS = longPreferencesKey("admin_unlocked_until_ms")
+        val VERIFIED_OTP_UID = stringPreferencesKey("verified_otp_uid")
     }
 
     val onboardingCompleted: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -59,6 +60,10 @@ class PreferencesManager(private val context: Context) {
         prefs[Keys.RECENT_SUBJECT_IDS]?.split(",")?.filter { it.isNotBlank() } ?: emptyList()
     }
 
+    val verifiedOtpUid: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[Keys.VERIFIED_OTP_UID]
+    }
+
     val adminLockoutState: Flow<AdminLockoutState> = context.dataStore.data.map { prefs ->
         AdminLockoutState(
             failedAttempts = prefs[Keys.ADMIN_FAILED_ATTEMPTS] ?: 0,
@@ -72,6 +77,16 @@ class PreferencesManager(private val context: Context) {
 
     suspend fun setOnboardingCompleted(completed: Boolean) {
         context.dataStore.edit { it[Keys.ONBOARDING_COMPLETED] = completed }
+    }
+
+    suspend fun setVerifiedOtpUid(uid: String?) {
+        context.dataStore.edit { prefs ->
+            if (uid.isNullOrBlank()) {
+                prefs.remove(Keys.VERIFIED_OTP_UID)
+            } else {
+                prefs[Keys.VERIFIED_OTP_UID] = uid
+            }
+        }
     }
 
     suspend fun setThemeMode(mode: AppThemeMode) {
@@ -145,6 +160,7 @@ class PreferencesManager(private val context: Context) {
             prefs.remove(Keys.SEARCH_HISTORY)
             prefs.remove(Keys.RECENT_PDF_IDS)
             prefs.remove(Keys.RECENT_SUBJECT_IDS)
+            prefs.remove(Keys.VERIFIED_OTP_UID)
         }
     }
 }

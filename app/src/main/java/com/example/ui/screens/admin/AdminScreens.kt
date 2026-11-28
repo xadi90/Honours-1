@@ -84,6 +84,7 @@ import com.example.data.model.AdminLog
 import com.example.data.model.AdminUserUsageSummary
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.Chapter
 import com.example.data.model.Department
 import com.example.data.model.DeveloperProfileConfig
@@ -301,12 +302,17 @@ fun AdminDashboardScreen(
     onNavigateAiLimits: () -> Unit = {},
     onNavigateCollegeEditor: () -> Unit = {},
     userUsageSummary: AdminUserUsageSummary = AdminUserUsageSummary(),
-    onSeedAllPdfs: () -> Unit = {}
+    onSeedAllPdfs: () -> Unit = {},
+    authPolicy: AuthPolicyConfig = AuthPolicyConfig(),
+    onSaveAuthPolicy: (AuthPolicyConfig) -> Unit = {}
 ) {
     var modelName by remember(remoteConfig.modelName) { mutableStateOf(remoteConfig.modelName) }
     var sysInstructions by remember(remoteConfig.systemInstructions) { mutableStateOf(remoteConfig.systemInstructions) }
     var maintenanceMode by remember(remoteConfig.maintenanceMode) { mutableStateOf(remoteConfig.maintenanceMode) }
     var maintenanceMsg by remember(remoteConfig.maintenanceMessage) { mutableStateOf(remoteConfig.maintenanceMessage) }
+
+    var showUserDirectory by remember { mutableStateOf(false) }
+    var userSearchQuery by remember { mutableStateOf("") }
 
     var devName by remember(developerProfile.name) { mutableStateOf(developerProfile.name) }
     var devTagline by remember(developerProfile.tagline) { mutableStateOf(developerProfile.tagline) }
@@ -445,9 +451,145 @@ fun AdminDashboardScreen(
                         ) {
                             Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
                             Text(
-                                text = "জিরো-ট্রাস্ট প্রাইভেসি: ইউজারের ব্যক্তিগত নোট, বুকমার্ক ও AI চ্যাট সম্পূর্ণ সুরক্ষিত।",
+                                text = "জিরো-ট্রাস্ট প্রাইভেসি: ইউজারের নাম ও মেইল তালিকা শুধুমাত্র মূল অ্যাডমিন দেখতে পারেন; ব্যক্তিগত নোট ও AI চ্যাট সম্পূর্ণ সুরক্ষিত।",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        OutlinedButton(
+                            onClick = { showUserDirectory = !showUserDirectory },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
+                                .testTag("admin_user_directory_toggle")
+                        ) {
+                            Icon(
+                                imageVector = if (showUserDirectory) Icons.Default.VisibilityOff else Icons.Default.People,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                if (showUserDirectory) {
+                                    "ইউজার তালিকা লুকান"
+                                } else {
+                                    "নিবন্ধিত ইউজার তালিকা (নাম ও মেইল • ${userUsageSummary.users.size} জন)"
+                                }
+                            )
+                        }
+                        if (showUserDirectory) {
+                            OutlinedTextField(
+                                value = userSearchQuery,
+                                onValueChange = { userSearchQuery = it },
+                                label = { Text("নাম বা ইমেইল দিয়ে খুঁজুন") },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("admin_user_directory_search")
+                            )
+                            val filteredUsers = remember(userUsageSummary.users, userSearchQuery) {
+                                val q = userSearchQuery.trim().lowercase()
+                                if (q.isBlank()) userUsageSummary.users
+                                else userUsageSummary.users.filter {
+                                    it.displayName.lowercase().contains(q) ||
+                                        it.email.lowercase().contains(q) ||
+                                        it.selectedDepartmentName.lowercase().contains(q)
+                                }
+                            }
+                            if (filteredUsers.isEmpty()) {
+                                Text(
+                                    text = "কোনো নিবন্ধিত ইউজার পাওয়া যায়নি।",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("admin_user_directory_list"),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    filteredUsers.take(100).forEach { entry ->
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(10.dp),
+                                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = entry.displayName,
+                                                        style = MaterialTheme.typography.titleSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.weight(1f)
+                                                    )
+                                                    Text(
+                                                        text = "AI: ${entry.aiUsageCount}",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                                Text(
+                                                    text = entry.email.ifBlank { "ইমেইল পাওয়া যায়নি" },
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Text(
+                                                    text = "${entry.selectedDepartmentName} • ${entry.selectedYear}ম/য় বর্ষ",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                        }
+                                    }
+                                    if (filteredUsers.size > 100) {
+                                        Text(
+                                            text = "প্রথম ১০০ জন ইউজার দেখানো হচ্ছে — বাকিদের দেখতে উপরে সার্চ করুন।",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                Text(
+                                    text = "লগইনে ৫ সংখ্যার ইমেইল ভেরিফিকেশন কোড",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "চালু থাকলে প্রতিবার নতুন লগইনের সময় ইউজারের ইমেইলে ৫ সংখ্যার OTP কোড যাবে",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = authPolicy.requireEmailOtp,
+                                onCheckedChange = { enabled ->
+                                    onSaveAuthPolicy(authPolicy.copy(requireEmailOtp = enabled))
+                                },
+                                modifier = Modifier.testTag("admin_email_otp_policy_switch")
                             )
                         }
                     }

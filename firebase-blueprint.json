@@ -320,6 +320,7 @@
         "layoutSpan": { "type": "string", "enum": ["full", "half"] },
         "actionLabel": { "type": "string" },
         "actionUrl": { "type": "string" },
+        "imageUrl": { "type": "string" },
         "pinned": { "type": "boolean" },
         "sortOrder": { "type": "integer" },
         "status": { "type": "string", "enum": ["published", "draft"] },
@@ -327,6 +328,21 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["blockType", "title", "status", "createdAt", "updatedAt"]
+    },
+    "CollegeModerator": {
+      "title": "CollegeModerator",
+      "description": "Dedicated moderator allowed to manage only Sujat Ali Honours College, Pingna",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "note": { "type": "string" },
+        "active": { "type": "boolean" },
+        "addedByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "active", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -397,6 +413,10 @@
     "/ai_purchase_requests/{requestId}": {
       "schema": { "$ref": "#/entities/AiLimitPurchaseRequest" },
       "description": "Student AI limit purchase requests and admin verification status"
+    },
+    "/college_moderators/{moderatorEmail}": {
+      "schema": { "$ref": "#/entities/CollegeModerator" },
+      "description": "Dedicated moderators authorized only for Sujat Ali Honours College"
     }
   }
 }

@@ -176,12 +176,24 @@ class FirestoreRepository(
                 docRef.set(payload).await()
                 lastHeartbeatUid = user.uid
             } else if (lastHeartbeatUid != user.uid) {
-                docRef.update(
-                    mapOf(
-                        "lastActiveAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                val updates = mutableMapOf<String, Any>(
+                    "lastActiveAt" to FieldValue.serverTimestamp(),
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+                val authEmail = user.email?.trim().orEmpty()
+                if (authEmail.isNotBlank() && existing.getString("email").isNullOrBlank()) {
+                    updates["email"] = authEmail.take(160)
+                }
+                val authName = user.displayName?.trim().orEmpty()
+                val existingName = existing.getString("displayName").orEmpty()
+                if (authName.isNotBlank() && (existingName.isBlank() || existingName == "NU Student")) {
+                    updates["displayName"] = authName.take(100)
+                }
+                val authPhoto = user.photoUrl?.toString().orEmpty()
+                if (authPhoto.isNotBlank() && existing.getString("photoUrl").isNullOrBlank()) {
+                    updates["photoUrl"] = authPhoto.take(500)
+                }
+                docRef.update(updates).await()
                 lastHeartbeatUid = user.uid
             }
             Result.success(Unit)
@@ -1286,7 +1298,8 @@ class FirestoreRepository(
                     contactPhone = snap.getString("contactPhone").orEmpty(),
                     contactEmail = snap.getString("contactEmail").orEmpty(),
                     websiteUrl = snap.getString("websiteUrl").orEmpty(),
-                    officeHours = snap.getString("officeHours").orEmpty()
+                    officeHours = snap.getString("officeHours").orEmpty(),
+                    heroImageUrl = snap.getString("heroImageUrl").orEmpty()
                 )
             }
 
@@ -1295,6 +1308,10 @@ class FirestoreRepository(
         val defaults = CollegeProfileConfig()
         return try {
             requireUserId()
+            val cleanHeroImage = config.heroImageUrl.trim()
+            require(com.example.core.isValidCollegeImageInput(cleanHeroImage)) {
+                "সঠিক ব্যানার ছবি অথবা https:// লিংক দিন।"
+            }
             val cleanNameBn = config.collegeNameBn.trim().ifBlank { defaults.collegeNameBn }.take(160)
             db.document(path).set(
                 mapOf(
@@ -1318,11 +1335,14 @@ class FirestoreRepository(
                     "contactEmail" to config.contactEmail.trim().take(160),
                     "websiteUrl" to config.websiteUrl.trim().take(300),
                     "officeHours" to config.officeHours.trim().take(160),
+                    "heroImageUrl" to cleanHeroImage,
                     "updatedAt" to FieldValue.serverTimestamp()
                 ),
                 SetOptions.merge()
             ).await()
-            logAdminAction("UPDATE_COLLEGE_PROFILE", "Updated Sujat Ali Honours College layout (${config.layoutMode}, ${config.heroThemePreset})")
+            if (isBootstrappedAdminUser()) {
+                logAdminAction("UPDATE_COLLEGE_PROFILE", "Updated Sujat Ali Honours College layout (${config.layoutMode}, ${config.heroThemePreset})")
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -1360,6 +1380,10 @@ class FirestoreRepository(
             requireUserId()
             val cleanTitle = section.title.trim().take(200)
             require(cleanTitle.isNotBlank()) { "কার্ডের শিরোনাম লিখুন।" }
+            val cleanImageUrl = section.imageUrl.trim()
+            require(com.example.core.isValidCollegeImageInput(cleanImageUrl)) {
+                "সঠিক ছবি অথবা https:// লিংক দিন।"
+            }
             val existing = docRef.get().await()
             docRef.set(
                 mapOf(
@@ -1373,6 +1397,7 @@ class FirestoreRepository(
                     "layoutSpan" to section.layoutSpan.takeIf { it in allowedSpans }.orEmpty().ifBlank { "full" },
                     "actionLabel" to section.actionLabel.trim().take(80),
                     "actionUrl" to section.actionUrl.trim().take(500),
+                    "imageUrl" to cleanImageUrl,
                     "pinned" to section.pinned,
                     "sortOrder" to section.sortOrder,
                     "status" to if (section.status == "draft") "draft" else "published",
@@ -1380,7 +1405,9 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
-            logAdminAction("UPSERT_COLLEGE_SECTION", "${section.blockType}: $cleanTitle")
+            if (isBootstrappedAdminUser()) {
+                logAdminAction("UPSERT_COLLEGE_SECTION", "${section.blockType}: $cleanTitle")
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -1395,7 +1422,9 @@ class FirestoreRepository(
         return try {
             requireUserId()
             db.document(path).delete().await()
-            logAdminAction("DELETE_COLLEGE_SECTION", "Deleted college section $sectionId")
+            if (isBootstrappedAdminUser()) {
+                logAdminAction("DELETE_COLLEGE_SECTION", "Deleted college section $sectionId")
+            }
             Result.success(Unit)
         } catch (e: CancellationException) {
             throw e
@@ -1449,7 +1478,9 @@ class FirestoreRepository(
                 upsertCollegeSection(section).getOrThrow()
                 count++
             }
-            logAdminAction("SEED_COLLEGE_PORTAL", "Published Sujat Ali Honours College template ($count sections)")
+            if (isBootstrappedAdminUser()) {
+                logAdminAction("SEED_COLLEGE_PORTAL", "Published Sujat Ali Honours College template ($count sections)")
+            }
             Result.success(count)
         } catch (e: CancellationException) {
             throw e

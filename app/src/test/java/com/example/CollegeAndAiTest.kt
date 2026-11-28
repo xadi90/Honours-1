@@ -1,10 +1,13 @@
 package com.example
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import com.example.data.catalog.CollegeSeedCatalog
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.repository.AiRepository
@@ -129,5 +132,159 @@ class SujatAliCollegeRobolectricTest {
         composeRule.onNodeWithText("তথ্য ও যোগাযোগ").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("admin_college_save_contact_button").assertExists()
+
+        composeRule.onNodeWithText("মডারেটর").performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("college_moderator_email_input").assertExists()
+        composeRule.onNodeWithTag("college_moderator_add_button").assertExists()
+    }
+
+    @Test
+    fun `college moderator mode hides moderator management tab and shows scoped subtitle`() {
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AdminCollegeEditorScreen(
+                    config = CollegeProfileConfig(),
+                    sections = CollegeSeedCatalog.starterSections,
+                    onBack = {},
+                    onPreviewCollege = {},
+                    onSaveProfile = {},
+                    onSaveSection = {},
+                    onDeleteSection = {},
+                    onMoveSection = { _, _ -> },
+                    onToggleSectionStatus = {},
+                    onSeedStarterTemplate = {},
+                    isMainAdmin = false
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("Sujat Ali Honours College • কলেজ মডারেটর মোড", useUnmergedTree = true)
+            .assertExists()
+        composeRule.onNodeWithText("মডারেটর").assertDoesNotExist()
+    }
+
+    @Test
+    fun `college screen renders hero and section images when configured`() {
+        val sampleDataUri = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        val sectionsWithImage = listOf(
+            CollegeSeedCatalog.starterSections.first().copy(
+                id = "notice_with_photo",
+                imageUrl = sampleDataUri
+            )
+        )
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                SujatAliCollegeScreen(
+                    config = CollegeProfileConfig(heroImageUrl = sampleDataUri),
+                    sections = sectionsWithImage,
+                    isBackendAdmin = false,
+                    onBackClick = {},
+                    onCustomizeClick = {}
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("college_hero_image", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithTag("college_content_list")
+            .performScrollToNode(hasTestTag("college_section_card_notice_with_photo"))
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("college_section_image_notice_with_photo", useUnmergedTree = true)
+            .assertExists()
     }
 }
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36])
+class EmailOtpVerificationRobolectricTest {
+
+    @get:Rule
+    val composeRule = createComposeRule()
+
+    @Test
+    fun `email masking and image url validation work safely`() {
+        assertEquals("xa***@gmail.com", com.example.core.EmailOtpService.maskEmail("xadiahmed7@gmail.com"))
+        assertTrue(com.example.core.isValidCollegeImageInput("https://example.com/photo.jpg"))
+        assertTrue(com.example.core.isValidCollegeImageInput("data:image/jpeg;base64,/9j/4AAQ"))
+        assertFalse(com.example.core.isValidCollegeImageInput("http://insecure.example.com/photo.jpg"))
+    }
+
+    @Test
+    fun `5-digit otp verification succeeds and admin bypass is hidden for regular students`() {
+        var verifiedCalled = false
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                com.example.ui.screens.auth.EmailOtpVerificationScreen(
+                    email = "student@gmail.com",
+                    isBootstrappedAdmin = false,
+                    onVerified = { verifiedCalled = true },
+                    onSignOut = {},
+                    autoSendOnLaunch = true,
+                    sendOtp = {
+                        com.example.core.OtpSendResult.ServiceUnavailable(
+                            message = "Not deployed",
+                            isFunctionNotDeployed = true
+                        )
+                    },
+                    verifyOtp = { code ->
+                        if (code == "54321") {
+                            com.example.core.OtpVerifyResult.Verified
+                        } else {
+                            com.example.core.OtpVerifyResult.InvalidCode("ভুল কোড!")
+                        }
+                    }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        // Student never sees admin bypass button even on HTTP 404
+        composeRule.onNodeWithTag("email_otp_admin_bypass_button").assertDoesNotExist()
+        composeRule.onNodeWithText("st***@gmail.com", substring = true, useUnmergedTree = true).assertExists()
+
+        // Enter wrong code first -> verify error banner appears
+        composeRule.onNodeWithTag("email_otp_input").performTextInput("11111")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("email_otp_verify_button").performClick()
+        composeRule.waitForIdle()
+        assertFalse(verifiedCalled)
+        composeRule.onNodeWithTag("email_otp_error_banner", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `5-digit otp verification triggers onVerified and admin sees bypass on 404`() {
+        var verifiedCalled = false
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                com.example.ui.screens.auth.EmailOtpVerificationScreen(
+                    email = "xadiahmed7@gmail.com",
+                    isBootstrappedAdmin = true,
+                    onVerified = { verifiedCalled = true },
+                    onSignOut = {},
+                    autoSendOnLaunch = true,
+                    sendOtp = {
+                        com.example.core.OtpSendResult.ServiceUnavailable(
+                            message = "Not deployed",
+                            isFunctionNotDeployed = true
+                        )
+                    },
+                    verifyOtp = { code ->
+                        if (code == "54321") {
+                            com.example.core.OtpVerifyResult.Verified
+                        } else {
+                            com.example.core.OtpVerifyResult.InvalidCode("ভুল কোড!")
+                        }
+                    }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("email_otp_admin_bypass_button", useUnmergedTree = true).assertExists()
+
+        composeRule.onNodeWithTag("email_otp_input").performTextInput("54321")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithTag("email_otp_verify_button").performClick()
+        composeRule.waitForIdle()
+        assertTrue(verifiedCalled)
+    }
+}
+

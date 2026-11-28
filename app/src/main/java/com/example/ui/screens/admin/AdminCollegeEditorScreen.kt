@@ -1,7 +1,11 @@
 package com.example.ui.screens.admin
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -25,18 +29,22 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,19 +63,27 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.core.CollegeImage
+import com.example.core.encodePickedImageToDataUri
 import com.example.data.catalog.CollegeSeedCatalog
+import com.example.data.model.CollegeModerator
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.model.CollegeSectionBlock
 import com.example.ui.components.EmptyStateView
 import com.example.ui.components.HonoursTopBar
 import com.example.ui.components.SectionHeader
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -81,10 +97,23 @@ fun AdminCollegeEditorScreen(
     onDeleteSection: (String) -> Unit,
     onMoveSection: (index: Int, direction: Int) -> Unit,
     onToggleSectionStatus: (CollegeSectionBlock) -> Unit,
-    onSeedStarterTemplate: () -> Unit
+    onSeedStarterTemplate: () -> Unit,
+    isMainAdmin: Boolean = true,
+    moderators: List<CollegeModerator> = emptyList(),
+    onSaveModerator: (email: String, displayName: String, note: String, active: Boolean) -> Unit = { _, _, _, _ -> },
+    onDeleteModerator: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("কার্ড ও বিন্যাস", "হেডার ও থিম", "তথ্য ও যোগাযোগ")
+    val tabs = remember(isMainAdmin) {
+        if (isMainAdmin) {
+            listOf("কার্ড ও বিন্যাস", "হেডার ও থিম", "তথ্য ও যোগাযোগ", "মডারেটর")
+        } else {
+            listOf("কার্ড ও বিন্যাস", "হেডার ও থিম", "তথ্য ও যোগাযোগ")
+        }
+    }
+    if (selectedTab >= tabs.size) {
+        selectedTab = 0
+    }
 
     var editingBlock by remember { mutableStateOf<CollegeSectionBlock?>(null) }
 
@@ -95,7 +124,11 @@ fun AdminCollegeEditorScreen(
     ) {
         HonoursTopBar(
             title = "সুজাত আলী কলেজ সাজান",
-            subtitle = "Sujat Ali Honours College, Pingna • Customizer",
+            subtitle = if (isMainAdmin) {
+                "Sujat Ali Honours College, Pingna • Customizer"
+            } else {
+                "Sujat Ali Honours College • কলেজ মডারেটর মোড"
+            },
             onBackClick = onBack,
             actions = {
                 IconButton(
@@ -339,10 +372,22 @@ fun AdminCollegeEditorScreen(
                 )
             }
 
-            else -> {
+            2 -> {
                 CollegeStatsContactEditor(
                     config = config,
                     onSaveProfile = onSaveProfile,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .widthIn(max = 760.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+            }
+
+            else -> {
+                CollegeModeratorsTab(
+                    moderators = moderators,
+                    onSaveModerator = onSaveModerator,
+                    onDeleteModerator = onDeleteModerator,
                     modifier = Modifier
                         .fillMaxSize()
                         .widthIn(max = 760.dp)
@@ -380,6 +425,24 @@ private fun CollegeHeaderThemeEditor(
     var noticeTicker by remember(config.noticeTicker) { mutableStateOf(config.noticeTicker) }
     var heroThemePreset by remember(config.heroThemePreset) { mutableStateOf(config.heroThemePreset) }
     var layoutMode by remember(config.layoutMode) { mutableStateOf(config.layoutMode) }
+    var heroImageUrl by remember(config.heroImageUrl) { mutableStateOf(config.heroImageUrl) }
+    var isProcessingImage by remember { mutableStateOf(false) }
+    var imageError by remember { mutableStateOf<String?>(null) }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val heroPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isProcessingImage = true
+                imageError = null
+                encodePickedImageToDataUri(context, uri)
+                    .onSuccess { encoded -> heroImageUrl = encoded }
+                    .onFailure { err -> imageError = err.localizedMessage ?: "ছবি প্রসেস করা যায়নি।" }
+                isProcessingImage = false
+            }
+        }
+    }
 
     LazyColumn(
         modifier = modifier,
@@ -394,7 +457,7 @@ private fun CollegeHeaderThemeEditor(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionHeader(
                         title = "কলেজ ব্যানার, থিম ও লেআউট",
-                        subtitle = "হেডার ব্যানারের রঙ, কার্ড সাজানোর স্টাইল ও মূল তথ্য পরিবর্তন করুন"
+                        subtitle = "হেডার ব্যানারের রঙ, ক্যাম্পাস ছবি, কার্ড সাজানোর স্টাইল ও মূল তথ্য পরিবর্তন করুন"
                     )
 
                     Text("ব্যানারের রঙের থিম (Hero Theme)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
@@ -423,6 +486,70 @@ private fun CollegeHeaderThemeEditor(
                                 label = { Text(label) }
                             )
                         }
+                    }
+
+                    Text("কলেজ ব্যানার / ক্যাম্পাস ছবি (সবার জন্য দৃশ্যমান)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    if (heroImageUrl.isNotBlank()) {
+                        CollegeImage(
+                            imageSource = heroImageUrl,
+                            contentDescription = "কলেজ ব্যানার প্রিভিউ",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                        )
+                    }
+                    if (!imageError.isNullOrBlank()) {
+                        Text(
+                            text = imageError.orEmpty(),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                heroPhotoPicker.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            enabled = !isProcessingImage,
+                            modifier = Modifier
+                                .weight(1f)
+                                .minimumInteractiveComponentSize()
+                                .testTag("admin_college_hero_pick_image_button")
+                        ) {
+                            if (isProcessingImage) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("প্রসেস হচ্ছে...")
+                            } else {
+                                Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (heroImageUrl.isBlank()) "ছবি আপলোড করুন" else "ছবি পরিবর্তন করুন")
+                            }
+                        }
+                        if (heroImageUrl.isNotBlank()) {
+                            TextButton(
+                                onClick = { heroImageUrl = "" },
+                                modifier = Modifier.minimumInteractiveComponentSize()
+                            ) {
+                                Text("ছবি সরান")
+                            }
+                        }
+                    }
+                    if (!heroImageUrl.startsWith("data:image/", ignoreCase = true)) {
+                        OutlinedTextField(
+                            value = heroImageUrl,
+                            onValueChange = { heroImageUrl = it },
+                            label = { Text("অথবা ছবির HTTPS লিংক (ঐচ্ছিক)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
 
                     OutlinedTextField(
@@ -482,10 +609,12 @@ private fun CollegeHeaderThemeEditor(
                                     mottoText = mottoText.trim(),
                                     noticeTicker = noticeTicker.trim(),
                                     heroThemePreset = heroThemePreset,
-                                    layoutMode = layoutMode
+                                    layoutMode = layoutMode,
+                                    heroImageUrl = heroImageUrl.trim()
                                 )
                             )
                         },
+                        enabled = !isProcessingImage,
                         modifier = Modifier
                             .fillMaxWidth()
                             .minimumInteractiveComponentSize()
@@ -493,7 +622,7 @@ private fun CollegeHeaderThemeEditor(
                     ) {
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("থিম ও হেডার সংরক্ষণ করুন")
+                        Text("থিম, ছবি ও হেডার সংরক্ষণ করুন")
                     }
                 }
             }
@@ -634,8 +763,26 @@ private fun CollegeSectionBlockDialog(
     var layoutSpan by remember(initialBlock) { mutableStateOf(initialBlock.layoutSpan) }
     var actionLabel by remember(initialBlock) { mutableStateOf(initialBlock.actionLabel) }
     var actionUrl by remember(initialBlock) { mutableStateOf(initialBlock.actionUrl) }
+    var imageUrl by remember(initialBlock) { mutableStateOf(initialBlock.imageUrl) }
+    var isProcessingImage by remember { mutableStateOf(false) }
+    var imageError by remember { mutableStateOf<String?>(null) }
     var pinned by remember(initialBlock) { mutableStateOf(initialBlock.pinned) }
     var isPublished by remember(initialBlock) { mutableStateOf(initialBlock.status == "published") }
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val blockPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isProcessingImage = true
+                imageError = null
+                encodePickedImageToDataUri(context, uri)
+                    .onSuccess { encoded -> imageUrl = encoded }
+                    .onFailure { err -> imageError = err.localizedMessage ?: "ছবি প্রসেস করা যায়নি।" }
+                isProcessingImage = false
+            }
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -684,6 +831,61 @@ private fun CollegeSectionBlockDialog(
                     maxLines = 5,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Text("কার্ডের ছবি (ঐচ্ছিক, সবাই দেখতে পাবে)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                if (imageUrl.isNotBlank()) {
+                    CollegeImage(
+                        imageSource = imageUrl,
+                        contentDescription = "কার্ডের ছবি প্রিভিউ",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                    )
+                }
+                if (!imageError.isNullOrBlank()) {
+                    Text(
+                        text = imageError.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            blockPhotoPicker.launch(
+                                PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                            )
+                        },
+                        enabled = !isProcessingImage,
+                        modifier = Modifier
+                            .weight(1f)
+                            .minimumInteractiveComponentSize()
+                            .testTag("admin_college_block_pick_image_button")
+                    ) {
+                        Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isProcessingImage) "লোড হচ্ছে..." else if (imageUrl.isBlank()) "পিক আপলোড" else "পিক বদলান")
+                    }
+                    if (imageUrl.isNotBlank()) {
+                        TextButton(onClick = { imageUrl = "" }) {
+                            Text("মুছুন")
+                        }
+                    }
+                }
+                if (!imageUrl.startsWith("data:image/", ignoreCase = true)) {
+                    OutlinedTextField(
+                        value = imageUrl,
+                        onValueChange = { imageUrl = it },
+                        label = { Text("অথবা ছবির HTTPS লিংক (ঐচ্ছিক)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 Text("রঙ ও আইকন", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -749,12 +951,13 @@ private fun CollegeSectionBlockDialog(
                             layoutSpan = layoutSpan,
                             actionLabel = actionLabel.trim(),
                             actionUrl = actionUrl.trim(),
+                            imageUrl = imageUrl.trim(),
                             pinned = pinned,
                             status = if (isPublished) "published" else "draft"
                         )
                     )
                 },
-                enabled = title.trim().isNotBlank()
+                enabled = title.trim().isNotBlank() && !isProcessingImage
             ) {
                 Text("সংরক্ষণ")
             }
@@ -765,4 +968,190 @@ private fun CollegeSectionBlockDialog(
             }
         }
     )
+}
+
+@Composable
+private fun CollegeModeratorsTab(
+    moderators: List<CollegeModerator>,
+    onSaveModerator: (email: String, displayName: String, note: String, active: Boolean) -> Unit,
+    onDeleteModerator: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var emailInput by remember { mutableStateOf("") }
+    var nameInput by remember { mutableStateOf("") }
+    var noteInput by remember { mutableStateOf("") }
+
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionHeader(
+                        title = "সুজাত আলী কলেজ মডারেটর যুক্ত করুন",
+                        subtitle = "এই মডারেটররা শুধুমাত্র সুজাত আলী অনার্স কলেজের ব্যানার, ছবি, নোটিশ ও কার্ড সাজাতে পারবেন। মূল অ্যাডমিন প্যানেল বা ইউজার তালিকায় তাদের কোনো অ্যাক্সেস থাকবে না।"
+                    )
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Shield,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "সীমিত অ্যাক্সেস: কেবলমাত্র সুজাত আলী অনার্স কলেজ ইন্টারফেস।",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    OutlinedTextField(
+                        value = emailInput,
+                        onValueChange = { emailInput = it },
+                        label = { Text("মডারেটরের Google / Gmail ঠিকানা *") },
+                        placeholder = { Text("moderator@gmail.com") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("college_moderator_email_input")
+                    )
+                    OutlinedTextField(
+                        value = nameInput,
+                        onValueChange = { nameInput = it },
+                        label = { Text("মডারেটরের নাম (ঐচ্ছিক)") },
+                        singleLine = true,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("college_moderator_name_input")
+                    )
+                    OutlinedTextField(
+                        value = noteInput,
+                        onValueChange = { noteInput = it },
+                        label = { Text("পদবি / নোট (যেমন: কলেজ প্রতিনিধি)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            onSaveModerator(emailInput.trim(), nameInput.trim(), noteInput.trim(), true)
+                            emailInput = ""
+                            nameInput = ""
+                            noteInput = ""
+                        },
+                        enabled = emailInput.trim().contains("@"),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .minimumInteractiveComponentSize()
+                            .testTag("college_moderator_add_button")
+                    ) {
+                        Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("কলেজ মডারেটর যুক্ত করুন")
+                    }
+                }
+            }
+        }
+
+        item {
+            SectionHeader(
+                title = "বর্তমান কলেজ মডারেটর (${moderators.size})",
+                subtitle = "যেকোনো সময় সক্রিয়/নিষ্ক্রিয় বা অপসারণ করুন"
+            )
+        }
+
+        if (moderators.isEmpty()) {
+            item {
+                EmptyStateView(
+                    icon = Icons.Default.PersonAdd,
+                    title = "এখনো কোনো কলেজ মডারেটর যুক্ত নেই",
+                    message = "উপরের ফর্মে কারো Gmail ঠিকানা দিয়ে শুধুমাত্র সুজাত আলী অনার্স কলেজের জন্য মডারেটর নিয়োগ করুন।"
+                )
+            }
+        } else {
+            items(moderators, key = { it.email.ifBlank { it.id } }) { mod ->
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("college_moderator_card_${mod.email}")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = mod.displayName.ifBlank { mod.email },
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = mod.email,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (mod.note.isNotBlank()) {
+                                Text(
+                                    text = mod.note,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Text(
+                                text = if (mod.active) "সক্রিয় মডারেটর" else "সাময়িক স্থগিত",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mod.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Switch(
+                                checked = mod.active,
+                                onCheckedChange = { nextActive ->
+                                    onSaveModerator(mod.email, mod.displayName, mod.note, nextActive)
+                                }
+                            )
+                            IconButton(
+                                onClick = { onDeleteModerator(mod.email) },
+                                modifier = Modifier.testTag("delete_moderator_${mod.email}")
+                            ) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "মডারেটর সরান",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -301,6 +301,17 @@ data class CatalogMetaConfig(
     val draftIds: List<String> = emptyList()
 )
 
+data class AdminUserDirectoryEntry(
+    val userId: String = "",
+    val displayName: String = "",
+    val email: String = "",
+    val selectedDepartmentName: String = "",
+    val selectedYear: Long = 1L,
+    val aiUsageCount: Long = 0L,
+    val lastActiveAt: Timestamp? = null,
+    val createdAt: Timestamp? = null
+)
+
 data class AdminUserUsageSummary(
     val totalUsers: Int = 0,
     val activeTodayCount: Int = 0,
@@ -308,7 +319,14 @@ data class AdminUserUsageSummary(
     val newUsersLast7DaysCount: Int = 0,
     val totalAiQueriesUsed: Long = 0L,
     val departmentCounts: List<Pair<String, Int>> = emptyList(),
-    val yearCounts: List<Pair<Long, Int>> = emptyList()
+    val yearCounts: List<Pair<Long, Int>> = emptyList(),
+    val users: List<AdminUserDirectoryEntry> = emptyList()
+)
+
+@Keep
+@IgnoreExtraProperties
+data class AuthPolicyConfig(
+    val requireEmailOtp: Boolean = true
 )
 
 

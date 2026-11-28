@@ -3,10 +3,13 @@ package com.example.data.repository
 import com.example.core.OperationType
 import com.example.core.handleFirestoreError
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AdminUserDirectoryEntry
 import com.example.data.model.AdminUserUsageSummary
 import com.example.data.model.Announcement
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Chapter
+import com.example.data.model.CollegeModerator
 import com.example.data.model.Department
 import com.example.data.model.PdfResource
 import com.example.data.model.StudyQuestion
@@ -128,6 +131,24 @@ fun FirestoreRepository.observeAdminUserUsageSummary(): Flow<AdminUserUsageSumma
                 yearCountMap[yr] = (yearCountMap[yr] ?: 0) + 1
             }
 
+            val directoryEntries = users
+                .map { u ->
+                    AdminUserDirectoryEntry(
+                        userId = u.userId.ifBlank { u.id },
+                        displayName = u.displayName.ifBlank { "NU Student" },
+                        email = u.email,
+                        selectedDepartmentName = u.selectedDepartmentName.ifBlank {
+                            AcademicSeedCatalog.defaultDepartments.firstOrNull { it.id == u.selectedDepartmentId }?.nameBn
+                                ?: u.selectedDepartmentId.ifBlank { "অনির্ধারিত" }
+                        },
+                        selectedYear = u.selectedYear.coerceIn(1L, 4L),
+                        aiUsageCount = u.aiUsageCount.coerceAtLeast(0L),
+                        lastActiveAt = u.lastActiveAt ?: u.updatedAt ?: u.createdAt,
+                        createdAt = u.createdAt
+                    )
+                }
+                .sortedByDescending { (it.lastActiveAt ?: it.createdAt)?.seconds ?: 0L }
+
             AdminUserUsageSummary(
                 totalUsers = users.size,
                 activeTodayCount = activeToday,
@@ -138,7 +159,8 @@ fun FirestoreRepository.observeAdminUserUsageSummary(): Flow<AdminUserUsageSumma
                     .sortedByDescending { it.value }
                     .take(6)
                     .map { it.key to it.value },
-                yearCounts = listOf(1L, 2L, 3L, 4L).map { it to (yearCountMap[it] ?: 0) }
+                yearCounts = listOf(1L, 2L, 3L, 4L).map { it to (yearCountMap[it] ?: 0) },
+                users = directoryEntries
             )
         }
 }
@@ -288,6 +310,123 @@ suspend fun FirestoreRepository.seedAllHonoursPdfsToFirestore(): Result<Int> {
         throw e
     } catch (e: Exception) {
         handleFirestoreError(e, OperationType.WRITE, "pdf_library/seed_all")
+        Result.failure(e)
+    }
+}
+
+private val MODERATOR_EMAIL_REGEX = Regex("^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$")
+
+fun FirestoreRepository.observeAuthPolicy(): Flow<AuthPolicyConfig> =
+    db.collection("app_settings").document("auth_policy")
+        .snapshots()
+        .map { snap ->
+            if (!snap.exists()) AuthPolicyConfig(requireEmailOtp = true)
+            else AuthPolicyConfig(
+                requireEmailOtp = snap.getBoolean("requireEmailOtp") ?: true
+            )
+        }
+
+suspend fun FirestoreRepository.saveAuthPolicy(config: AuthPolicyConfig): Result<Unit> {
+    val path = "app_settings/auth_policy"
+    return try {
+        requireUserId()
+        db.document(path).set(
+            mapOf(
+                "requireEmailOtp" to config.requireEmailOtp,
+                "updatedAt" to FieldValue.serverTimestamp()
+            ),
+            SetOptions.merge()
+        ).await()
+        logAdminAction(
+            "UPDATE_AUTH_POLICY",
+            "Email 5-digit OTP on login=${config.requireEmailOtp}"
+        )
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.WRITE, path)
+        Result.failure(e)
+    }
+}
+
+fun FirestoreRepository.observeIsCollegeModerator(): Flow<Boolean> {
+    val user = auth.currentUser ?: return flowOf(false)
+    val email = user.email?.trim()?.lowercase().orEmpty()
+    if (!user.isEmailVerified || email.isBlank() || !MODERATOR_EMAIL_REGEX.matches(email)) {
+        return flowOf(false)
+    }
+    return db.collection("college_moderators").document(email)
+        .snapshots()
+        .map { snap ->
+            snap.exists() && (snap.getBoolean("active") == true)
+        }
+}
+
+fun FirestoreRepository.observeCollegeModerators(): Flow<List<CollegeModerator>> {
+    if (!isBootstrappedAdminUser()) {
+        return flowOf(emptyList())
+    }
+    return db.collection("college_moderators")
+        .snapshots()
+        .map { snap ->
+            snap.toObjects(CollegeModerator::class.java, DocumentSnapshot.ServerTimestampBehavior.ESTIMATE)
+                .sortedBy { it.email }
+        }
+}
+
+suspend fun FirestoreRepository.upsertCollegeModerator(
+    email: String,
+    displayName: String,
+    note: String,
+    active: Boolean
+): Result<Unit> {
+    val normalizedEmail = email.trim().lowercase()
+    return try {
+        requireUserId()
+        require(normalizedEmail.length in 5..160 && MODERATOR_EMAIL_REGEX.matches(normalizedEmail)) {
+            "সঠিক Gmail / ইমেইল ঠিকানা লিখুন।"
+        }
+        val docRef = db.collection("college_moderators").document(normalizedEmail)
+        val existing = docRef.get().await()
+        val addedBy = auth.currentUser?.email.orEmpty().take(160)
+        docRef.set(
+            mapOf(
+                "email" to normalizedEmail,
+                "displayName" to displayName.trim().take(120),
+                "note" to note.trim().take(300),
+                "active" to active,
+                "addedByEmail" to (existing.getString("addedByEmail")?.takeIf { it.isNotBlank() } ?: addedBy),
+                "createdAt" to (existing.getTimestamp("createdAt") ?: FieldValue.serverTimestamp()),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+        ).await()
+        logAdminAction(
+            "UPSERT_COLLEGE_MODERATOR",
+            "Sujat Ali College moderator $normalizedEmail (active=$active)"
+        )
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.WRITE, "college_moderators/$normalizedEmail")
+        Result.failure(e)
+    }
+}
+
+suspend fun FirestoreRepository.deleteCollegeModerator(moderatorEmail: String): Result<Unit> {
+    val normalizedEmail = moderatorEmail.trim().lowercase()
+    val path = "college_moderators/$normalizedEmail"
+    return try {
+        requireUserId()
+        require(MODERATOR_EMAIL_REGEX.matches(normalizedEmail)) { "অবৈধ ইমেইল।" }
+        db.document(path).delete().await()
+        logAdminAction("DELETE_COLLEGE_MODERATOR", "Removed Sujat Ali College moderator $normalizedEmail")
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.DELETE, path)
         Result.failure(e)
     }
 }

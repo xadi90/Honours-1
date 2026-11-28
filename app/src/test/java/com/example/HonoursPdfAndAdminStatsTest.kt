@@ -5,10 +5,14 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.AdminUserDirectoryEntry
 import com.example.data.model.AdminUserUsageSummary
 import com.example.data.model.AiRemoteConfig
+import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Department
 import com.example.data.repository.mergeCatalogItems
@@ -140,5 +144,90 @@ class HonoursPdfAndAdminStatsTest {
         composeRule.onNodeWithText("বিষয়").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithTag("admin_subject_dept_picker", useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun `admin dashboard reveals registered user names and emails with search and otp policy toggle`() {
+        val directoryUsers = listOf(
+            AdminUserDirectoryEntry(
+                userId = "u1",
+                displayName = "Rafiqul Islam",
+                email = "rafiq.nu@gmail.com",
+                selectedDepartmentName = "রাষ্ট্রবিজ্ঞান",
+                selectedYear = 2L,
+                aiUsageCount = 12L
+            ),
+            AdminUserDirectoryEntry(
+                userId = "u2",
+                displayName = "Nusrat Jahan",
+                email = "nusrat.honours@gmail.com",
+                selectedDepartmentName = "বাংলা",
+                selectedYear = 3L,
+                aiUsageCount = 5L
+            )
+        )
+        val summary = AdminUserUsageSummary(
+            totalUsers = 2,
+            activeTodayCount = 2,
+            activeLast7DaysCount = 2,
+            newUsersLast7DaysCount = 2,
+            totalAiQueriesUsed = 17L,
+            users = directoryUsers
+        )
+        var savedPolicy: AuthPolicyConfig? = null
+        composeRule.setContent {
+            HonoursSolutionTheme {
+                AdminDashboardScreen(
+                    departmentsCount = 22,
+                    subjectsCount = 9,
+                    pdfsCount = 90,
+                    openReportsCount = 0,
+                    remoteConfig = AiRemoteConfig(),
+                    adminLogs = emptyList(),
+                    onBack = {},
+                    onLockPanel = {},
+                    onSeedCatalog = {},
+                    onSaveAiConfig = {},
+                    onNavigatePdfUpload = {},
+                    onNavigateContentEditor = {},
+                    onNavigateAnnouncements = {},
+                    onNavigateReports = {},
+                    userUsageSummary = summary,
+                    authPolicy = AuthPolicyConfig(requireEmailOtp = true),
+                    onSaveAuthPolicy = { savedPolicy = it }
+                )
+            }
+        }
+        composeRule.waitForIdle()
+        // Directory list is initially collapsed until Admin expands it
+        composeRule.onNodeWithTag("admin_user_directory_list").assertDoesNotExist()
+        composeRule.onNodeWithTag("admin_user_directory_toggle")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+
+        composeRule.onNodeWithTag("admin_user_directory_list", useUnmergedTree = true)
+            .performScrollTo()
+            .assertExists()
+        composeRule.onNodeWithText("Rafiqul Islam", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("rafiq.nu@gmail.com", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("Nusrat Jahan", useUnmergedTree = true).assertExists()
+
+        // Filter directory by email
+        composeRule.onNodeWithTag("admin_user_directory_search")
+            .performScrollTo()
+            .performTextInput("nusrat")
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("nusrat.honours@gmail.com", useUnmergedTree = true).assertExists()
+        composeRule.onNodeWithText("rafiq.nu@gmail.com").assertDoesNotExist()
+
+        // Scroll to Email OTP policy switch and verify callback
+        composeRule.onNodeWithTag("admin_dashboard_list")
+            .performScrollToNode(hasTestTag("admin_email_otp_policy_switch"))
+        composeRule.onNodeWithTag("admin_email_otp_policy_switch")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+        assertEquals(false, savedPolicy?.requireEmailOtp)
     }
 }
