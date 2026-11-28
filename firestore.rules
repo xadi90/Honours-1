@@ -375,18 +375,50 @@ service cloud.firestore {
         request.auth.uid in chatData.participantIds;
     }
 
+    function isValidChatAudio(url) {
+      return url is string && (
+        url == '' ||
+        (url.size() <= 450000 && url.matches('^data:audio/(mp4|m4a|aac|mpeg);base64,[A-Za-z0-9+/=]+$'))
+      );
+    }
+
+    function isValidChatBlock(data, targetUid) {
+      return data.userId == targetUid &&
+        data.blockedUntil is timestamp &&
+        data.durationMinutes is int && data.durationMinutes >= 1 && data.durationMinutes <= 10080 &&
+        (!('reason' in data) || isBoundedString(data.reason, 0, 500)) &&
+        (!('blockedByUid' in data) || isBoundedString(data.blockedByUid, 0, 128)) &&
+        (!('reportId' in data) || isBoundedString(data.reportId, 0, 128)) &&
+        isValidTimestamp(data.updatedAt);
+    }
+
+    function isSenderGloballyBlocked() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/chat_blocks/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/chat_blocks/$(request.auth.uid)).data.blockedUntil > request.time;
+    }
+
     function isValidChatThread(data) {
       return ('participantIds' in data) &&
         data.participantIds is list &&
-        data.participantIds.size() == 2 &&
-        data.participantIds[0] is string && data.participantIds[0].size() >= 1 && data.participantIds[0].size() <= 128 &&
-        data.participantIds[1] is string && data.participantIds[1].size() >= 1 && data.participantIds[1].size() <= 128 &&
-        data.participantIds[0] != data.participantIds[1] &&
+        (
+          (data.get('isGroup', false) == true && data.participantIds.size() >= 1 && data.participantIds.size() <= 50) ||
+          (data.get('isGroup', false) == false && data.participantIds.size() == 2 &&
+           data.participantIds[0] is string && data.participantIds[0].size() >= 1 && data.participantIds[0].size() <= 128 &&
+           data.participantIds[1] is string && data.participantIds[1].size() >= 1 && data.participantIds[1].size() <= 128 &&
+           data.participantIds[0] != data.participantIds[1])
+        ) &&
+        (!('isGroup' in data) || data.isGroup is bool) &&
+        (!('groupName' in data) || isBoundedString(data.groupName, 0, 100)) &&
+        (data.get('isGroup', false) == false || isBoundedString(data.get('groupName', ''), 1, 100)) &&
+        (!('groupPhoto' in data) || isValidCollegeImage(data.groupPhoto)) &&
+        (!('createdBy' in data) || isBoundedString(data.createdBy, 0, 128)) &&
         (!('participantNames' in data) || data.participantNames is map) &&
         (!('participantDepts' in data) || data.participantDepts is map) &&
         (!('participantPhotos' in data) || data.participantPhotos is map) &&
         (!('lastMessageText' in data) || isBoundedString(data.lastMessageText, 0, 1000)) &&
         (!('lastMessageSenderId' in data) || isBoundedString(data.lastMessageSenderId, 0, 128)) &&
+        (!('lastMessageSenderName' in data) || isBoundedString(data.lastMessageSenderName, 0, 120)) &&
         (!('lastMessageAt' in data) || isValidTimestamp(data.lastMessageAt)) &&
         (!('unreadCounts' in data) || data.unreadCounts is map) &&
         (!('typingUsers' in data) || data.typingUsers is map) &&
@@ -400,15 +432,18 @@ service cloud.firestore {
         (!('senderName' in data) || isBoundedString(data.senderName, 0, 120)) &&
         (!('text' in data) || isBoundedString(data.text, 0, 4000)) &&
         (!('imageUrl' in data) || isValidCollegeImage(data.imageUrl)) &&
+        (!('audioUrl' in data) || isValidChatAudio(data.audioUrl)) &&
+        (!('audioDurationSec' in data) || (data.audioDurationSec is int && data.audioDurationSec >= 0 && data.audioDurationSec <= 300)) &&
         (
           (('deletedForAll' in data) && data.deletedForAll == true) ||
           ('text' in data && data.text is string && data.text.size() > 0) ||
-          ('imageUrl' in data && data.imageUrl is string && data.imageUrl.size() > 0)
+          ('imageUrl' in data && data.imageUrl is string && data.imageUrl.size() > 0) ||
+          ('audioUrl' in data && data.audioUrl is string && data.audioUrl.size() > 0)
         ) &&
         (!('replyToMessageId' in data) || isBoundedString(data.replyToMessageId, 0, 128)) &&
         (!('replyToSenderName' in data) || isBoundedString(data.replyToSenderName, 0, 120)) &&
         (!('replyToPreview' in data) || isBoundedString(data.replyToPreview, 0, 300)) &&
-        (!('readBy' in data) || (data.readBy is list && data.readBy.size() <= 2)) &&
+        (!('readBy' in data) || (data.readBy is list && data.readBy.size() <= 50)) &&
         (!('deletedForAll' in data) || data.deletedForAll is bool) &&
         isValidTimestamp(data.createdAt);
     }
@@ -695,10 +730,25 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isAdmin();
     }
 
+    match /chat_blocks/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+      allow create, update: if isAdmin() && isValidId(userId) && isValidChatBlock(incoming(), userId);
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
     match /chats/{chatId} {
       function canUpdateBlockedBy() {
         return incoming().get('blockedBy', []).removeAll([request.auth.uid]) ==
           existing().get('blockedBy', []).removeAll([request.auth.uid]);
+      }
+
+      function canUpdateParticipantsForGroup() {
+        return existing().get('isGroup', false) == true && (
+          incoming().participantIds == existing().participantIds ||
+          existing().get('createdBy', '') == request.auth.uid ||
+          existing().participantIds.removeAll([request.auth.uid]) == incoming().participantIds
+        );
       }
 
       function parentChatExists() {
@@ -728,16 +778,22 @@ service cloud.firestore {
       allow list: if isSignedIn() && request.auth.uid in existing().participantIds;
       allow create: if isValidId(chatId) &&
         isChatParticipant(incoming()) &&
+        !isSenderGloballyBlocked() &&
         (!('blockedBy' in incoming()) || incoming().blockedBy.size() == 0) &&
+        (incoming().get('isGroup', false) == false || incoming().get('createdBy', '') == request.auth.uid) &&
         isValidChatThread(incoming());
       allow update: if isValidId(chatId) &&
         isChatParticipant(existing()) &&
-        incoming().participantIds == existing().participantIds &&
         incoming().createdAt == existing().createdAt &&
+        incoming().get('isGroup', false) == existing().get('isGroup', false) &&
+        (
+          (existing().get('isGroup', false) == false && incoming().participantIds == existing().participantIds) ||
+          canUpdateParticipantsForGroup()
+        ) &&
         canUpdateBlockedBy() &&
         (
-          existing().get('blockedBy', []).size() == 0 ||
-          !incoming().diff(existing()).affectedKeys().hasAny(['lastMessageText', 'lastMessageSenderId', 'lastMessageAt'])
+          (existing().get('blockedBy', []).size() == 0 && !isSenderGloballyBlocked()) ||
+          !incoming().diff(existing()).affectedKeys().hasAny(['lastMessageText', 'lastMessageSenderId', 'lastMessageSenderName', 'lastMessageAt'])
         ) &&
         isValidChatThread(incoming());
       allow delete: if isAdmin() && isValidId(chatId);
@@ -749,6 +805,7 @@ service cloud.firestore {
           isValidId(messageId) &&
           isParentParticipant() &&
           !isParentBlocked() &&
+          !isSenderGloballyBlocked() &&
           incoming().senderId == request.auth.uid &&
           (!('deletedForAll' in incoming()) || incoming().deletedForAll == false) &&
           isValidChatMessage(incoming());
@@ -762,16 +819,18 @@ service cloud.firestore {
             (
               incoming().diff(existing()).affectedKeys().hasOnly(['readBy']) &&
               incoming().readBy is list &&
-              incoming().readBy.size() <= 2 &&
+              incoming().readBy.size() <= 50 &&
               request.auth.uid in incoming().readBy &&
               incoming().readBy.hasAll(existing().get('readBy', []))
             ) ||
             (
               existing().senderId == request.auth.uid &&
-              incoming().diff(existing()).affectedKeys().hasOnly(['deletedForAll', 'text', 'imageUrl']) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['deletedForAll', 'text', 'imageUrl', 'audioUrl', 'audioDurationSec']) &&
               incoming().deletedForAll == true &&
               incoming().text == '' &&
-              incoming().imageUrl == ''
+              incoming().imageUrl == '' &&
+              (!('audioUrl' in incoming()) || incoming().audioUrl == '') &&
+              (!('audioDurationSec' in incoming()) || incoming().audioDurationSec == 0)
             )
           );
         allow delete: if isValidId(chatId) && isValidId(messageId) && (

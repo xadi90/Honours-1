@@ -68,9 +68,21 @@ class FirestoreRepository(
             ?: throw IllegalStateException("Please sign in with Google to access this feature.")
     }
 
+    fun resolvedUserEmail(): String {
+        val user = auth.currentUser ?: return ""
+        val direct = user.email?.trim()?.lowercase().orEmpty()
+        if (direct.isNotBlank()) return direct
+        return user.providerData
+            .firstOrNull { !it.email.isNullOrBlank() }
+            ?.email
+            ?.trim()
+            ?.lowercase()
+            .orEmpty()
+    }
+
     fun isBootstrappedAdminUser(): Boolean {
         val user = auth.currentUser ?: return false
-        val email = user.email?.lowercase().orEmpty()
+        val email = resolvedUserEmail()
         return user.isEmailVerified && email in BOOTSTRAPPED_ADMIN_EMAILS
     }
 

@@ -2,7 +2,10 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.R
+import com.example.core.formatAudioDuration
+import com.example.core.isValidChatAudioInput
 import com.example.core.isValidCollegeImageInput
+import com.example.data.model.ChatBlockStatus
 import com.example.data.model.ChatUserProfile
 import com.example.data.model.UserChatMessage
 import com.example.data.model.UserChatThread
@@ -17,6 +20,7 @@ import com.google.firebase.firestore.SetOptions
 import com.google.firebase.firestore.snapshots
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
@@ -66,6 +70,16 @@ class FirestoreChatRepository(
             ?.takeIf { it.isNotEmpty() }
             ?: auth.currentUser?.photoUrl?.toString()?.trim().orEmpty()
         return if (isValidCollegeImageInput(candidate)) candidate else ""
+    }
+
+    fun observeMyChatBlock(): Flow<ChatBlockStatus?> {
+        val myUid = currentUid() ?: return flowOf(null)
+        return db.collection("chat_blocks").document(myUid)
+            .snapshots()
+            .map { snap ->
+                if (!snap.exists()) null
+                else runCatching { snap.toObject(ChatBlockStatus::class.java) }.getOrNull()
+            }
     }
 
     suspend fun syncMyChatProfile(profile: UserProfile?): Result<Unit> = runCatching {
@@ -190,8 +204,13 @@ class FirestoreChatRepository(
                     myUid to myPhoto,
                     partner.userId to partner.photoUrl.takeIf { isValidCollegeImageInput(it) }.orEmpty()
                 ),
+                "isGroup" to false,
+                "groupName" to "",
+                "groupPhoto" to "",
+                "createdBy" to myUid,
                 "lastMessageText" to "",
                 "lastMessageSenderId" to "",
+                "lastMessageSenderName" to "",
                 "unreadCounts" to mapOf(myUid to 0L, partner.userId to 0L),
                 "typingUsers" to mapOf(myUid to 0L, partner.userId to 0L),
                 "blockedBy" to emptyList<String>(),
@@ -216,28 +235,135 @@ class FirestoreChatRepository(
         chatId
     }.onFailure { if (it is CancellationException) throw it }
 
+    suspend fun createGroupChat(
+        groupName: String,
+        members: List<ChatUserProfile>,
+        myProfile: UserProfile?
+    ): Result<String> = runCatching {
+        val myUid = requireUid()
+        val cleanGroupName = groupName.trim().take(90)
+        require(cleanGroupName.isNotEmpty()) { "গ্রুপের একটি নাম লিখুন।" }
+        val distinctMembers = members
+            .filter { it.userId.isNotBlank() && it.userId != myUid }
+            .distinctBy { it.userId }
+            .take(49)
+        require(distinctMembers.isNotEmpty()) { "কমপক্ষে একজন সহপাঠী নির্বাচন করুন।" }
+
+        val chatId = "grp_${db.collection("chats").document().id}"
+        val chatRef = db.collection("chats").document(chatId)
+        val myName = safeDisplayName(myProfile)
+        val myDept = (myProfile?.selectedDepartmentName?.ifBlank { "অনার্স শিক্ষার্থী" } ?: "অনার্স শিক্ষার্থী").take(110)
+        val myPhoto = safePhotoUrl(myProfile)
+
+        val participantIds = buildList {
+            add(myUid)
+            distinctMembers.forEach { add(it.userId) }
+        }
+        val namesMap = mutableMapOf(myUid to myName)
+        val deptsMap = mutableMapOf(myUid to myDept)
+        val photosMap = mutableMapOf(myUid to myPhoto)
+        val unreadMap = mutableMapOf(myUid to 0L)
+        val typingMap = mutableMapOf(myUid to 0L)
+
+        distinctMembers.forEach { member ->
+            namesMap[member.userId] = member.displayName.ifBlank { "NU Student" }.take(90)
+            deptsMap[member.userId] = member.departmentName.take(110)
+            photosMap[member.userId] = member.photoUrl.takeIf { isValidCollegeImageInput(it) }.orEmpty()
+            unreadMap[member.userId] = 0L
+            typingMap[member.userId] = 0L
+        }
+
+        val groupThreadData = hashMapOf<String, Any>(
+            "participantIds" to participantIds,
+            "participantNames" to namesMap,
+            "participantDepts" to deptsMap,
+            "participantPhotos" to photosMap,
+            "isGroup" to true,
+            "groupName" to cleanGroupName,
+            "groupPhoto" to "",
+            "createdBy" to myUid,
+            "lastMessageText" to "$myName গ্রুপটি তৈরি করেছেন",
+            "lastMessageSenderId" to myUid,
+            "lastMessageSenderName" to myName,
+            "lastMessageAt" to FieldValue.serverTimestamp(),
+            "unreadCounts" to unreadMap,
+            "typingUsers" to typingMap,
+            "blockedBy" to emptyList<String>(),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        chatRef.set(groupThreadData).await()
+        chatId
+    }.onFailure { if (it is CancellationException) throw it }
+
+    suspend fun addGroupMembers(
+        chatId: String,
+        newMembers: List<ChatUserProfile>
+    ): Result<Unit> = runCatching {
+        requireUid()
+        val cleanMembers = newMembers.filter { it.userId.isNotBlank() }.distinctBy { it.userId }
+        require(cleanMembers.isNotEmpty()) { "সদস্য নির্বাচন করুন।" }
+        val chatRef = db.collection("chats").document(chatId)
+        val updates = mutableMapOf<String, Any>(
+            "participantIds" to FieldValue.arrayUnion(*cleanMembers.map { it.userId }.toTypedArray()),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        cleanMembers.forEach { member ->
+            updates["participantNames.${member.userId}"] = member.displayName.ifBlank { "NU Student" }.take(90)
+            updates["participantDepts.${member.userId}"] = member.departmentName.take(110)
+            updates["participantPhotos.${member.userId}"] = member.photoUrl.takeIf { isValidCollegeImageInput(it) }.orEmpty()
+            updates["unreadCounts.${member.userId}"] = 0L
+            updates["typingUsers.${member.userId}"] = 0L
+        }
+        chatRef.update(updates).await()
+        Unit
+    }.onFailure { if (it is CancellationException) throw it }
+
+    suspend fun leaveGroupChat(chatId: String): Result<Unit> = runCatching {
+        val myUid = requireUid()
+        db.collection("chats").document(chatId)
+            .update(
+                mapOf(
+                    "participantIds" to FieldValue.arrayRemove(myUid),
+                    "typingUsers.$myUid" to 0L,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            )
+            .await()
+        Unit
+    }.onFailure { if (it is CancellationException) throw it }
+
     suspend fun sendMessage(
         chatId: String,
-        partnerUid: String,
+        recipientUids: List<String>,
         senderName: String,
         text: String,
         imageUrl: String = "",
+        audioUrl: String = "",
+        audioDurationSec: Long = 0L,
         replyTo: UserChatMessage? = null
     ): Result<Unit> = runCatching {
         val myUid = requireUid()
         val cleanText = text.trim().take(3900)
         val cleanImage = imageUrl.trim()
-        require(cleanText.isNotEmpty() || cleanImage.isNotEmpty()) {
-            "বার্তা অথবা ছবি যোগ করুন।"
+        val cleanAudio = audioUrl.trim()
+        val safeAudioDuration = audioDurationSec.coerceIn(0L, 300L)
+        require(cleanText.isNotEmpty() || cleanImage.isNotEmpty() || cleanAudio.isNotEmpty()) {
+            "বার্তা, ছবি অথবা ভয়েস যোগ করুন।"
         }
         require(isValidCollegeImageInput(cleanImage)) {
             "ছবির ফরম্যাট সঠিক নয়।"
         }
+        require(isValidChatAudioInput(cleanAudio)) {
+            "ভয়েস অডিও ফরম্যাট সঠিক নয়।"
+        }
 
         val chatRef = db.collection("chats").document(chatId)
         val msgRef = chatRef.collection("messages").document()
+        val cleanSenderName = senderName.ifBlank { "NU Student" }.take(90)
         val preview = when {
             cleanText.isNotEmpty() -> cleanText.take(140)
+            cleanAudio.isNotEmpty() -> "🎤 ভয়েস বার্তা (${formatAudioDuration(safeAudioDuration)})"
             else -> "📷 ছবি"
         }
 
@@ -245,6 +371,7 @@ class FirestoreChatRepository(
             when {
                 target.deletedForAll -> "মুছে ফেলা বার্তা"
                 target.text.isNotBlank() -> target.text.take(140)
+                target.audioUrl.isNotBlank() -> "🎤 ভয়েস বার্তা (${formatAudioDuration(target.audioDurationSec)})"
                 target.imageUrl.isNotBlank() -> "📷 ছবি"
                 else -> ""
             }
@@ -252,9 +379,11 @@ class FirestoreChatRepository(
 
         val messagePayload = hashMapOf<String, Any>(
             "senderId" to myUid,
-            "senderName" to senderName.ifBlank { "NU Student" }.take(90),
+            "senderName" to cleanSenderName,
             "text" to cleanText,
             "imageUrl" to cleanImage,
+            "audioUrl" to cleanAudio,
+            "audioDurationSec" to safeAudioDuration,
             "replyToMessageId" to (replyTo?.id.orEmpty().take(120)),
             "replyToSenderName" to (replyTo?.senderName.orEmpty().take(90)),
             "replyToPreview" to replyPreview,
@@ -263,20 +392,22 @@ class FirestoreChatRepository(
             "createdAt" to FieldValue.serverTimestamp()
         )
 
+        val threadUpdates = mutableMapOf<String, Any>(
+            "lastMessageText" to preview,
+            "lastMessageSenderId" to myUid,
+            "lastMessageSenderName" to cleanSenderName,
+            "lastMessageAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp(),
+            "unreadCounts.$myUid" to 0L,
+            "typingUsers.$myUid" to 0L
+        )
+        recipientUids.filter { it.isNotBlank() && it != myUid }.distinct().forEach { uid ->
+            threadUpdates["unreadCounts.$uid"] = FieldValue.increment(1L)
+        }
+
         val batch = db.batch()
         batch.set(msgRef, messagePayload)
-        batch.update(
-            chatRef,
-            mapOf(
-                "lastMessageText" to preview,
-                "lastMessageSenderId" to myUid,
-                "lastMessageAt" to FieldValue.serverTimestamp(),
-                "updatedAt" to FieldValue.serverTimestamp(),
-                "unreadCounts.$myUid" to 0L,
-                "unreadCounts.$partnerUid" to FieldValue.increment(1L),
-                "typingUsers.$myUid" to 0L
-            )
-        )
+        batch.update(chatRef, threadUpdates)
         batch.commit().await()
         Unit
     }.onFailure { if (it is CancellationException) throw it }
@@ -307,7 +438,7 @@ class FirestoreChatRepository(
                 )
             }
             unreadPartnerMsgs.takeLast(50).forEach { msg ->
-                val updatedReadBy = (msg.readBy + myUid).distinct().take(2)
+                val updatedReadBy = (msg.readBy + myUid).distinct().take(50)
                 batch.update(chatRef.collection("messages").document(msg.id), "readBy", updatedReadBy)
             }
             batch.commit().await()
@@ -347,7 +478,9 @@ class FirestoreChatRepository(
                 mapOf(
                     "deletedForAll" to true,
                     "text" to "",
-                    "imageUrl" to ""
+                    "imageUrl" to "",
+                    "audioUrl" to "",
+                    "audioDurationSec" to 0L
                 )
             )
             .await()

@@ -9,6 +9,7 @@ import com.example.data.model.Announcement
 import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Chapter
+import com.example.data.model.ChatBlockStatus
 import com.example.data.model.CollegeModerator
 import com.example.data.model.Department
 import com.example.data.model.PdfResource
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import java.util.Date
 
 fun FirestoreRepository.observeCatalogMeta(): Flow<CatalogMetaConfig> =
     db.collection("app_settings").document("catalog_meta")
@@ -358,7 +360,7 @@ suspend fun FirestoreRepository.saveAuthPolicy(config: AuthPolicyConfig): Result
 
 fun FirestoreRepository.observeIsCollegeModerator(): Flow<Boolean> {
     val user = auth.currentUser ?: return flowOf(false)
-    val email = user.email?.trim()?.lowercase().orEmpty()
+    val email = resolvedUserEmail()
     if (!user.isEmailVerified || email.isBlank() || !MODERATOR_EMAIL_REGEX.matches(email)) {
         return flowOf(false)
     }
@@ -428,6 +430,104 @@ suspend fun FirestoreRepository.deleteCollegeModerator(moderatorEmail: String): 
         require(MODERATOR_EMAIL_REGEX.matches(normalizedEmail)) { "অবৈধ ইমেইল।" }
         db.document(path).delete().await()
         logAdminAction("DELETE_COLLEGE_MODERATOR", "Removed Sujat Ali College moderator $normalizedEmail")
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.DELETE, path)
+        Result.failure(e)
+    }
+}
+
+fun FirestoreRepository.observeActiveChatBlocksForAdmin(): Flow<Map<String, ChatBlockStatus>> {
+    if (!isBootstrappedAdminUser()) {
+        return flowOf(emptyMap())
+    }
+    return db.collection("chat_blocks")
+        .snapshots()
+        .map { snap ->
+            snap.documents.mapNotNull { doc ->
+                runCatching { doc.toObject(ChatBlockStatus::class.java) }.getOrNull()
+            }.associateBy { it.userId.ifBlank { it.id } }
+        }
+}
+
+suspend fun FirestoreRepository.blockChatUserForDuration(
+    targetUserId: String,
+    durationMinutes: Long,
+    reason: String,
+    reportId: String = ""
+): Result<Unit> {
+    val cleanTargetUid = targetUserId.trim()
+    val path = "chat_blocks/$cleanTargetUid"
+    return try {
+        val adminUid = requireUserId()
+        require(cleanTargetUid.isNotBlank() && cleanTargetUid.length <= 128) {
+            "সঠিক ব্যবহারকারী আইডি পাওয়া যায়নি।"
+        }
+        val safeMinutes = durationMinutes.coerceIn(1L, 10080L)
+        val blockedUntil = Timestamp(Date(System.currentTimeMillis() + safeMinutes * 60_000L))
+        val durationLabel = when (safeMinutes) {
+            10L -> "১০ মিনিট"
+            20L -> "২০ মিনিট"
+            1440L -> "১ দিন"
+            else -> "$safeMinutes মিনিট"
+        }
+        val blockPayload = mapOf(
+            "userId" to cleanTargetUid,
+            "blockedUntil" to blockedUntil,
+            "durationMinutes" to safeMinutes,
+            "reason" to reason.trim().ifBlank { "অ্যাডমিন মডারেটর কর্তৃক সাময়িক ব্লক ($durationLabel)" }.take(450),
+            "blockedByUid" to adminUid,
+            "reportId" to reportId.trim().take(128),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        db.runBatch { batch ->
+            batch.set(db.document(path), blockPayload)
+            if (reportId.isNotBlank()) {
+                batch.update(
+                    db.collection("user_reports").document(reportId),
+                    mapOf(
+                        "status" to "resolved",
+                        "adminNote" to "ইউজারকে $durationLabel-এর জন্য চ্যাট থেকে ব্লক করা হয়েছে।",
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+        }.await()
+        logAdminAction("BLOCK_CHAT_USER", "Blocked user $cleanTargetUid for $durationLabel (report=$reportId)")
+        Result.success(Unit)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.WRITE, path)
+        Result.failure(e)
+    }
+}
+
+suspend fun FirestoreRepository.unblockChatUser(
+    targetUserId: String,
+    reportId: String = ""
+): Result<Unit> {
+    val cleanTargetUid = targetUserId.trim()
+    val path = "chat_blocks/$cleanTargetUid"
+    return try {
+        requireUserId()
+        require(cleanTargetUid.isNotBlank()) { "সঠিক ব্যবহারকারী আইডি পাওয়া যায়নি।" }
+        db.runBatch { batch ->
+            batch.delete(db.document(path))
+            if (reportId.isNotBlank()) {
+                batch.update(
+                    db.collection("user_reports").document(reportId),
+                    mapOf(
+                        "status" to "resolved",
+                        "adminNote" to "অ্যাডমিন কর্তৃক চ্যাট ব্লক তুলে নেওয়া হয়েছে।",
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }
+        }.await()
+        logAdminAction("UNBLOCK_CHAT_USER", "Unblocked user $cleanTargetUid")
         Result.success(Unit)
     } catch (e: CancellationException) {
         throw e
