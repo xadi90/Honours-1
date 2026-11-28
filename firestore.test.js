@@ -771,6 +771,9 @@ test("Student chat: PII-free /chat_profiles discovery, participant-only /chats &
   await assertSucceeds(bobDb.collection("chat_profiles").get());
   await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
 
+  // Alice checks whether chatId exists BEFORE creating it (resource == null must not throw PERMISSION_DENIED)
+  await assertSucceeds(aliceDb.collection("chats").doc(chatId).get());
+
   // Alice creates direct chat thread with Bob; outsider Eve cannot create or read it
   await assertFails(
     eveDb.collection("chats").doc(chatId).set({
@@ -794,8 +797,18 @@ test("Student chat: PII-free /chat_profiles discovery, participant-only /chats &
       updatedAt: now,
     })
   );
+  // Once chat exists, outsider Eve cannot read it; Bob can read & query it
   await assertFails(eveDb.collection("chats").doc(chatId).get());
+  await assertSucceeds(bobDb.collection("chats").doc(chatId).get());
   await assertSucceeds(bobDb.collection("chats").where("participantIds", "array-contains", BOB_UID).get());
+
+  // Typing status & lastMessage update succeed for participant
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).update({
+      [`typingUsers.${ALICE_UID}`]: Date.now(),
+      updatedAt: new Date(Date.now() - 450),
+    })
+  );
 
   // Alice sends a text + image message; sender impersonation & Eve denied
   await assertFails(

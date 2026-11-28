@@ -724,7 +724,7 @@ service cloud.firestore {
           parentChatData().blockedBy.size() > 0;
       }
 
-      allow get: if isValidId(chatId) && isChatParticipant(existing());
+      allow get: if isValidId(chatId) && isSignedIn() && (resource == null || isChatParticipant(existing()));
       allow list: if isSignedIn() && request.auth.uid in existing().participantIds;
       allow create: if isValidId(chatId) &&
         isChatParticipant(incoming()) &&
