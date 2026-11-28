@@ -102,6 +102,15 @@ fun AllDepartmentsPdfLibraryScreen(
                 it.code.contains(searchQuery, ignoreCase = true)
         }
     }
+    val matchingPdfs = remember(pdfs, searchQuery) {
+        if (searchQuery.isBlank()) emptyList()
+        else pdfs.filter {
+            it.title.contains(searchQuery, ignoreCase = true) ||
+                it.subjectName.contains(searchQuery, ignoreCase = true) ||
+                it.courseCode.contains(searchQuery, ignoreCase = true) ||
+                it.departmentName.contains(searchQuery, ignoreCase = true)
+        }.take(20)
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         HonoursTopBar(
@@ -122,12 +131,42 @@ fun AllDepartmentsPdfLibraryScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("বিভাগ খুঁজুন (যেমন: রাষ্ট্রবিজ্ঞান, বাংলা, English, Economics)...") },
+                    placeholder = { Text("বিভাগ বা বিষয়ের PDF খুঁজুন (যেমন: বাংলা, English, Physics)...") },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     singleLine = true,
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.fillMaxWidth().testTag("pdf_library_dept_search")
                 )
+            }
+
+            if (matchingPdfs.isNotEmpty()) {
+                item {
+                    Text("মিলে যাওয়া PDF সমূহ (${matchingPdfs.size})", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                }
+                items(matchingPdfs, key = { "search_pdf_${it.id}" }) { pdf ->
+                    Card(
+                        onClick = { onOpenPdfReader(pdf.id) },
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(pdf.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text(
+                                    text = "${pdf.departmentName} • Year ${pdf.yearNumber} • ${pdf.subjectName}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             if (pdfs.isNotEmpty() && searchQuery.isBlank()) {
@@ -222,12 +261,17 @@ fun DepartmentPdfScreen(
 ) {
     var selectedYear by remember { mutableIntStateOf(0) } // 0 = All Years
     var selectedCategory by remember { mutableStateOf("All") }
+    var searchQuery by remember { mutableStateOf("") }
 
-    val deptPdfs = remember(pdfs, department?.id, selectedYear, selectedCategory) {
+    val deptPdfs = remember(pdfs, department?.id, selectedYear, selectedCategory, searchQuery) {
         pdfs.filter { pdf ->
             (department == null || pdf.departmentId == department.id) &&
                 (selectedYear == 0 || pdf.yearNumber == selectedYear.toLong()) &&
-                (selectedCategory == "All" || pdf.category.equals(selectedCategory, ignoreCase = true))
+                (selectedCategory == "All" || pdf.category.equals(selectedCategory, ignoreCase = true)) &&
+                (searchQuery.isBlank() ||
+                    pdf.title.contains(searchQuery, ignoreCase = true) ||
+                    pdf.subjectName.contains(searchQuery, ignoreCase = true) ||
+                    pdf.courseCode.contains(searchQuery, ignoreCase = true))
         }
     }
 
@@ -239,6 +283,15 @@ fun DepartmentPdfScreen(
         )
 
         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = { Text("বিষয়, কোর্স কোড বা PDF খুঁজুন...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().testTag("dept_pdf_search_input")
+            )
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item {
                     FilterChip(selected = selectedYear == 0, onClick = { selectedYear = 0 }, label = { Text("All Years") })

@@ -9,6 +9,7 @@ import com.example.core.PdfUtils
 import com.example.core.PreferencesManager
 import com.example.core.toUserFriendlyFirestoreMessage
 import com.example.data.catalog.AcademicSeedCatalog
+import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Chapter
 import com.example.data.model.Department
 import com.example.data.model.ModelTest
@@ -18,6 +19,8 @@ import com.example.data.model.StudyQuestion
 import com.example.data.model.Subject
 import com.example.data.model.UiState
 import com.example.data.repository.FirestoreRepository
+import com.example.data.repository.mergeCatalogItems
+import com.example.data.repository.observeCatalogMeta
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -27,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -45,28 +49,60 @@ class AcademicViewModel(
         private const val STOP_TIMEOUT_MS = 5000L
     }
 
-    val departments: StateFlow<UiState<List<Department>>> = firestoreRepo.observePublishedDepartments()
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.defaultDepartments } }
+    private val catalogMetaFlow: Flow<CatalogMetaConfig> = firestoreRepo.observeCatalogMeta()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(CatalogMetaConfig())
+        }
+
+    val departments: StateFlow<UiState<List<Department>>> = combine(
+        firestoreRepo.observePublishedDepartments(),
+        catalogMetaFlow
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.defaultDepartments, meta, includeDrafts = false) { it.id }
+            .sortedBy { it.sortOrder }
+    }
         .asUiState("Failed to load departments")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
-    val subjects: StateFlow<UiState<List<Subject>>> = firestoreRepo.observePublishedSubjects()
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.starterSubjects } }
+    val subjects: StateFlow<UiState<List<Subject>>> = combine(
+        firestoreRepo.observePublishedSubjects(),
+        catalogMetaFlow
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterSubjects, meta, includeDrafts = false) { it.id }
+            .sortedWith(compareBy({ it.yearNumber }, { it.courseCode }))
+    }
         .asUiState("Failed to load subjects")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
-    val chapters: StateFlow<UiState<List<Chapter>>> = firestoreRepo.observePublishedChapters()
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.starterChapters } }
+    val chapters: StateFlow<UiState<List<Chapter>>> = combine(
+        firestoreRepo.observePublishedChapters(),
+        catalogMetaFlow
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterChapters, meta, includeDrafts = false) { it.id }
+            .sortedBy { it.chapterNumber }
+    }
         .asUiState("Failed to load chapters")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
-    val pdfs: StateFlow<UiState<List<PdfResource>>> = firestoreRepo.observePublishedPdfs()
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.starterPdfs } }
+    val pdfs: StateFlow<UiState<List<PdfResource>>> = combine(
+        firestoreRepo.observePublishedPdfs(),
+        catalogMetaFlow
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterPdfs, meta, includeDrafts = false) { it.id }
+    }
         .asUiState("Failed to load PDF library")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
-    val questions: StateFlow<UiState<List<StudyQuestion>>> = firestoreRepo.observePublishedQuestions()
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.starterQuestions } }
+    val questions: StateFlow<UiState<List<StudyQuestion>>> = combine(
+        firestoreRepo.observePublishedQuestions(),
+        catalogMetaFlow
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterQuestions, meta, includeDrafts = false) { it.id }
+    }
         .asUiState("Failed to load questions")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
@@ -109,20 +145,26 @@ class AcademicViewModel(
         }
         // Starter or metadata-only PDF -> materialize clean offline study guide PDF so PdfRenderer always opens cleanly
         val body = buildString {
+            appendLine("National University (NU) Honours Academic Resource")
             appendLine("Department: ${pdf.departmentName.ifBlank { pdf.departmentId }}")
-            appendLine("Honours Year: ${pdf.yearNumber}")
-            appendLine("Subject: ${pdf.subjectName} (${pdf.courseCode})")
+            appendLine("Honours Year: Year ${pdf.yearNumber}")
+            appendLine("Subject / Paper: ${pdf.subjectName} (${pdf.courseCode.ifBlank { "NU Core" }})")
             appendLine("Category: ${pdf.category}")
             appendLine()
-            appendLine("Description & Study Overview:")
-            appendLine(pdf.description.ifBlank { "National University Honours study resource managed via Honours Solution." })
+            appendLine("1. Course & Resource Overview")
+            appendLine(pdf.description.ifBlank { "National University Honours study guide managed via Honours Solution." })
             appendLine()
-            appendLine("Key Study Checklist:")
-            appendLine("1. Verify official NU syllabus topics and course code in your department notice.")
-            appendLine("2. Review Chapter Summaries and Previous-Year Question papers (Part A, B, C).")
-            appendLine("3. Use the in-app AI প্রশ্ন সমাধান (AI Question Solver) for structured exam answers.")
+            appendLine("2. NU Honours Exam Structure & Preparation Strategy")
+            appendLine("- Part A (Brief Questions - 10 marks): Memorize definitions, key scholars, dates, and constitutional/core concepts.")
+            appendLine("- Part B (Short Questions - 20 marks): Write structured 1.5-2 page answers with clear headings and examples.")
+            appendLine("- Part C (Broad Essay Questions - 50 marks): Include Bhumika, Theorists/Definitions, Core Analysis, Critical Evaluation, and Uposhonghar.")
             appendLine()
-            appendLine("Note: Administrators can attach or replace the full PDF binary via Content Management -> PDF Upload.")
+            appendLine("3. Smart Study Workflow in Honours Solution")
+            appendLine("- Open 'AI প্রশ্ন সমাধান' and select Year ${pdf.yearNumber} (${pdf.subjectName}) to generate exam-ready Bangla or English answers.")
+            appendLine("- Practice timed MCQ sets & review previous-year NU board questions before exams.")
+            appendLine("- Bookmark key pages here for instant offline revision.")
+            appendLine()
+            appendLine("Live Sync Notice: Whenever Admin uploads or updates the full PDF in Content Management, your app updates automatically.")
         }
         val generated = PdfUtils.createStudyGuidePdf(
             context = appContext,

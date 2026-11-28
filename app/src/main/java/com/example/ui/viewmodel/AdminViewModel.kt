@@ -9,11 +9,14 @@ import com.example.core.AdminLockoutState
 import com.example.core.PdfUtils
 import com.example.core.PreferencesManager
 import com.example.core.toUserFriendlyFirestoreMessage
+import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AdminLog
+import com.example.data.model.AdminUserUsageSummary
 import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
+import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.Chapter
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.model.CollegeSectionBlock
@@ -25,6 +28,18 @@ import com.example.data.model.Subject
 import com.example.data.model.UiState
 import com.example.data.model.UserReport
 import com.example.data.repository.FirestoreRepository
+import com.example.data.repository.deleteChapter
+import com.example.data.repository.deleteQuestion
+import com.example.data.repository.mergeCatalogItems
+import com.example.data.repository.observeAdminUserUsageSummary
+import com.example.data.repository.observeAllAnnouncementsForAdmin
+import com.example.data.repository.observeAllChaptersForAdmin
+import com.example.data.repository.observeAllDepartmentsForAdmin
+import com.example.data.repository.observeAllPdfsForAdmin
+import com.example.data.repository.observeAllQuestionsForAdmin
+import com.example.data.repository.observeAllSubjectsForAdmin
+import com.example.data.repository.observeCatalogMeta
+import com.example.data.repository.seedAllHonoursPdfsToFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +47,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -133,6 +149,103 @@ class AdminViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), emptyList())
 
+    val catalogMeta: StateFlow<CatalogMetaConfig> = firestoreRepo.observeCatalogMeta()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            emit(CatalogMetaConfig())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), CatalogMetaConfig())
+
+    val adminUsageSummary: StateFlow<AdminUserUsageSummary> = firestoreRepo.observeAdminUserUsageSummary()
+        .catch { err ->
+            val firestoreErr = generateSequence(err) { it.cause }
+                .filterIsInstance<FirebaseFirestoreException>()
+                .firstOrNull()
+            if (firestoreErr == null && err is CancellationException) throw err
+            Log.w(TAG, "Unable to load admin user usage summary", firestoreErr ?: err)
+            emit(AdminUserUsageSummary())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AdminUserUsageSummary())
+
+    val adminDepartments: StateFlow<List<Department>> = combine(
+        firestoreRepo.observeAllDepartmentsForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.defaultDepartments, meta, includeDrafts = true) { it.id }
+            .sortedBy { it.sortOrder }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.defaultDepartments)
+
+    val adminSubjects: StateFlow<List<Subject>> = combine(
+        firestoreRepo.observeAllSubjectsForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterSubjects, meta, includeDrafts = true) { it.id }
+            .sortedWith(compareBy({ it.departmentId }, { it.yearNumber }, { it.courseCode }))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterSubjects)
+
+    val adminChapters: StateFlow<List<Chapter>> = combine(
+        firestoreRepo.observeAllChaptersForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterChapters, meta, includeDrafts = true) { it.id }
+            .sortedWith(compareBy({ it.yearNumber }, { it.chapterNumber }))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterChapters)
+
+    val adminPdfs: StateFlow<List<PdfResource>> = combine(
+        firestoreRepo.observeAllPdfsForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterPdfs, meta, includeDrafts = true) { it.id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterPdfs)
+
+    val adminQuestions: StateFlow<List<StudyQuestion>> = combine(
+        firestoreRepo.observeAllQuestionsForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterQuestions, meta, includeDrafts = true) { it.id }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterQuestions)
+
+    val adminAnnouncements: StateFlow<List<Announcement>> = combine(
+        firestoreRepo.observeAllAnnouncementsForAdmin()
+            .catch { err ->
+                val firestoreErr = generateSequence(err) { it.cause }.filterIsInstance<FirebaseFirestoreException>().firstOrNull()
+                if (firestoreErr == null && err is CancellationException) throw err
+                emit(emptyList())
+            },
+        catalogMeta
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterAnnouncements, meta, includeDrafts = true) { it.id }
+            .sortedWith(compareByDescending<Announcement> { it.pinned }.thenByDescending { it.createdAt?.seconds ?: 0L })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterAnnouncements)
+
     fun refreshAdminStatus() {
         viewModelScope.launch {
             val isAdmin = firestoreRepo.checkIsAdmin()
@@ -217,15 +330,23 @@ class AdminViewModel(
     fun seedStarterCatalog() {
         viewModelScope.launch {
             firestoreRepo.seedDefaultCatalogToFirestore()
-                .onSuccess { count -> _adminToast.value = "Published $count starter items to Firestore." }
+                .onSuccess { count -> _adminToast.value = "$count টি একাডেমিক আইটেম ও সকল বিভাগের PDF সবার কাছে প্রকাশিত হয়েছে।" }
                 .onFailure { err -> _adminToast.value = err.toUserFriendlyFirestoreMessage("Failed to seed catalog.") }
+        }
+    }
+
+    fun seedAllHonoursPdfs() {
+        viewModelScope.launch {
+            firestoreRepo.seedAllHonoursPdfsToFirestore()
+                .onSuccess { count -> _adminToast.value = "সকল ২২টি বিভাগের $count টি অনার্স PDF সবার কাছে অটো আপডেট হয়েছে।" }
+                .onFailure { err -> _adminToast.value = err.toUserFriendlyFirestoreMessage("PDF প্রকাশ করা যায়নি।") }
         }
     }
 
     fun saveDepartment(dept: Department) {
         viewModelScope.launch {
             firestoreRepo.upsertDepartment(dept)
-                .onSuccess { _adminToast.value = "Department saved (${dept.nameBn})." }
+                .onSuccess { _adminToast.value = "${dept.nameBn} সংরক্ষণ হয়েছে ও সবার কাছে অটো সিঙ্ক হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save department.") }
         }
     }
@@ -233,7 +354,7 @@ class AdminViewModel(
     fun deleteDepartment(id: String) {
         viewModelScope.launch {
             firestoreRepo.deleteDepartment(id)
-                .onSuccess { _adminToast.value = "Department deleted." }
+                .onSuccess { _adminToast.value = "বিভাগটি মুছে ফেলা হয়েছে ও লাইভ আপডেট হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to delete department.") }
         }
     }
@@ -241,7 +362,7 @@ class AdminViewModel(
     fun saveSubject(subject: Subject) {
         viewModelScope.launch {
             firestoreRepo.upsertSubject(subject)
-                .onSuccess { _adminToast.value = "Subject saved (${subject.courseCode})." }
+                .onSuccess { _adminToast.value = "${subject.courseCode} সংরক্ষণ হয়েছে ও সবার কাছে অটো সিঙ্ক হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save subject.") }
         }
     }
@@ -249,7 +370,7 @@ class AdminViewModel(
     fun deleteSubject(id: String) {
         viewModelScope.launch {
             firestoreRepo.deleteSubject(id)
-                .onSuccess { _adminToast.value = "Subject deleted." }
+                .onSuccess { _adminToast.value = "বিষয়টি মুছে ফেলা হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to delete subject.") }
         }
     }
@@ -257,8 +378,16 @@ class AdminViewModel(
     fun saveChapter(chapter: Chapter) {
         viewModelScope.launch {
             firestoreRepo.upsertChapter(chapter)
-                .onSuccess { _adminToast.value = "Chapter ${chapter.chapterNumber} saved." }
+                .onSuccess { _adminToast.value = "অধ্যায় ${chapter.chapterNumber} সংরক্ষণ ও লাইভ সিঙ্ক হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save chapter.") }
+        }
+    }
+
+    fun deleteChapter(id: String) {
+        viewModelScope.launch {
+            firestoreRepo.deleteChapter(id)
+                .onSuccess { _adminToast.value = "অধ্যায়টি মুছে ফেলা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to delete chapter.") }
         }
     }
 
@@ -297,8 +426,16 @@ class AdminViewModel(
     fun saveQuestion(question: StudyQuestion) {
         viewModelScope.launch {
             firestoreRepo.upsertQuestion(question)
-                .onSuccess { _adminToast.value = "Question saved." }
+                .onSuccess { _adminToast.value = "প্রশ্ন সংরক্ষণ ও সবার কাছে অটো সিঙ্ক হয়েছে।" }
                 .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to save question.") }
+        }
+    }
+
+    fun deleteQuestion(id: String) {
+        viewModelScope.launch {
+            firestoreRepo.deleteQuestion(id)
+                .onSuccess { _adminToast.value = "প্রশ্নটি মুছে ফেলা হয়েছে।" }
+                .onFailure { _adminToast.value = it.toUserFriendlyFirestoreMessage("Failed to delete question.") }
         }
     }
 

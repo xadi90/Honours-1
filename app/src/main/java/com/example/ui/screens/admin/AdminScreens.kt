@@ -29,15 +29,18 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.CloudDone
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
@@ -78,6 +81,7 @@ import androidx.compose.ui.unit.dp
 import com.example.core.AdminLockoutState
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AdminLog
+import com.example.data.model.AdminUserUsageSummary
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.Chapter
@@ -295,7 +299,9 @@ fun AdminDashboardScreen(
     onSaveDeveloperProfile: (DeveloperProfileConfig) -> Unit = {},
     pendingPurchasesCount: Int = 0,
     onNavigateAiLimits: () -> Unit = {},
-    onNavigateCollegeEditor: () -> Unit = {}
+    onNavigateCollegeEditor: () -> Unit = {},
+    userUsageSummary: AdminUserUsageSummary = AdminUserUsageSummary(),
+    onSeedAllPdfs: () -> Unit = {}
 ) {
     var modelName by remember(remoteConfig.modelName) { mutableStateOf(remoteConfig.modelName) }
     var sysInstructions by remember(remoteConfig.systemInstructions) { mutableStateOf(remoteConfig.systemInstructions) }
@@ -331,7 +337,8 @@ fun AdminDashboardScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .widthIn(max = 720.dp)
-                .align(Alignment.CenterHorizontally),
+                .align(Alignment.CenterHorizontally)
+                .testTag("admin_dashboard_list"),
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -346,6 +353,109 @@ fun AdminDashboardScreen(
 
             item {
                 Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("admin_user_usage_card"),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.People, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            SectionHeader(
+                                title = "অ্যাপ ব্যবহারকারী ও অ্যাক্টিভিটি পরিসংখ্যান",
+                                subtitle = "রিয়েল-টাইম ব্যবহারকারীর সংখ্যা ও সক্রিয়তা"
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AdminStatCard(
+                                label = "মোট ইউজার",
+                                value = "${userUsageSummary.totalUsers}",
+                                modifier = Modifier.weight(1f).testTag("admin_total_users_count")
+                            )
+                            AdminStatCard(
+                                label = "আজ অ্যাক্টিভ",
+                                value = "${userUsageSummary.activeTodayCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                            AdminStatCard(
+                                label = "৭ দিনে অ্যাক্টিভ",
+                                value = "${userUsageSummary.activeLast7DaysCount}",
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("নতুন ইউজার (৭ দিন)", style = MaterialTheme.typography.labelSmall)
+                                    Text("+${userUsageSummary.newUsersLast7DaysCount}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Text("মোট AI সমাধান", style = MaterialTheme.typography.labelSmall)
+                                    Text("${userUsageSummary.totalAiQueriesUsed}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        if (userUsageSummary.yearCounts.any { it.second > 0 }) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(userUsageSummary.yearCounts) { (yr, cnt) ->
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text(
+                                            text = "${yr}ম/য় বর্ষ: $cnt জন",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (userUsageSummary.departmentCounts.isNotEmpty()) {
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text("জনপ্রিয় বিভাগ অনুযায়ী শিক্ষার্থী", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                userUsageSummary.departmentCounts.forEach { (deptName, cnt) ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(deptName, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                                        Text("$cnt জন", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                text = "জিরো-ট্রাস্ট প্রাইভেসি: ইউজারের ব্যক্তিগত নোট, বুকমার্ক ও AI চ্যাট সম্পূর্ণ সুরক্ষিত।",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -353,7 +463,7 @@ fun AdminDashboardScreen(
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionHeader(
                             title = "একাডেমিক ম্যানেজমেন্ট টুলস",
-                            subtitle = "ডায়নামিকভাবে সকল বিভাগ, সিলেবাস, PDF ও ঘোষণা পরিচালনা করুন"
+                            subtitle = "এখানে আপডেট করা সকল বিভাগ, সিলেবাস, PDF ও নোটিশ সবার কাছে অটো সিঙ্ক হয়"
                         )
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             AdminActionCard("PDF আপলোড", Icons.Default.CloudUpload, onNavigatePdfUpload, Modifier.weight(1f), "admin_nav_pdf_upload")
@@ -387,6 +497,17 @@ fun AdminDashboardScreen(
                                 .testTag("admin_seed_catalog_button")
                         ) {
                             Text("ডিফল্ট ২২টি বিভাগ ও প্রারম্ভিক সিলেবাস Firestore-এ প্রকাশ করুন")
+                        }
+                        OutlinedButton(
+                            onClick = onSeedAllPdfs,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
+                                .testTag("admin_seed_all_pdfs_button")
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("সকল বিষয়ের পিডিএফ (২২ বিভাগ) প্রকাশ করুন")
                         }
                     }
                 }
@@ -784,7 +905,19 @@ fun AdminPdfUploadScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(item.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                Surface(
+                                    color = if (item.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = if (item.status == "published") "LIVE" else "DRAFT",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             Text(
                                 text = "${item.departmentName} • Year ${item.yearNumber} • ${item.category}",
                                 style = MaterialTheme.typography.bodySmall,
@@ -827,20 +960,86 @@ fun AdminContentEditorScreen(
     onSaveSubject: (Subject) -> Unit,
     onDeleteSubject: (String) -> Unit,
     onSaveChapter: (Chapter) -> Unit,
-    onSaveQuestion: (StudyQuestion) -> Unit
+    onSaveQuestion: (StudyQuestion) -> Unit,
+    onDeleteChapter: (String) -> Unit = {},
+    onDeleteQuestion: (String) -> Unit = {}
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("বিভাগ", "বিষয়", "অধ্যায়", "প্রশ্ন ও MCQ")
+
+    // Tab 0 state
+    var editingDeptId by remember { mutableStateOf("") }
+    var deptNameBn by remember { mutableStateOf("") }
+    var deptNameEn by remember { mutableStateOf("") }
+    var deptCode by remember { mutableStateOf("") }
+    var deptDesc by remember { mutableStateOf("") }
+    var deptStatus by remember { mutableStateOf("published") }
+
+    // Tab 1 state
+    var editingSubjectId by remember { mutableStateOf("") }
+    var subjDeptId by remember { mutableStateOf(departments.firstOrNull()?.id ?: "political_science") }
+    var subjYear by remember { mutableLongStateOf(1L) }
+    var subjCourseCode by remember { mutableStateOf("") }
+    var subjTitleBn by remember { mutableStateOf("") }
+    var subjTitleEn by remember { mutableStateOf("") }
+    var subjNote by remember { mutableStateOf("") }
+    var subjStatus by remember { mutableStateOf("published") }
+
+    // Tab 2 state
+    var editingChapterId by remember { mutableStateOf("") }
+    var chapSubjectId by remember { mutableStateOf(subjects.firstOrNull()?.id ?: "") }
+    var chapNum by remember { mutableStateOf("1") }
+    var chapTitleBn by remember { mutableStateOf("") }
+    var chapSummary by remember { mutableStateOf("") }
+    var chapDefinitions by remember { mutableStateOf("") }
+    var chapShortQ by remember { mutableStateOf("") }
+    var chapBroadQ by remember { mutableStateOf("") }
+    var chapStatus by remember { mutableStateOf("published") }
+
+    // Tab 3 state
+    var editingQuestionId by remember { mutableStateOf("") }
+    var qDeptId by remember { mutableStateOf(departments.firstOrNull()?.id ?: "political_science") }
+    var qType by remember { mutableStateOf("previous_year") }
+    var qYear by remember { mutableLongStateOf(1L) }
+    var qSubjectName by remember { mutableStateOf("রাজনৈতিক তত্ত্ব পরিচিতি") }
+    var qExamYear by remember { mutableStateOf("2024") }
+    var qPrompt by remember { mutableStateOf("") }
+    var qAnswerText by remember { mutableStateOf("") }
+    var qOptA by remember { mutableStateOf("") }
+    var qOptB by remember { mutableStateOf("") }
+    var qOptC by remember { mutableStateOf("") }
+    var qOptD by remember { mutableStateOf("") }
+    var qCorrectIdx by remember { mutableIntStateOf(0) }
+    var qStatus by remember { mutableStateOf("published") }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        HonoursTopBar(title = "সিলেবাস ও কনটেন্ট এডিটর", subtitle = "Dynamic NU Curriculum CRUD", onBackClick = onBack)
+        HonoursTopBar(title = "সিলেবাস ও কনটেন্ট এডিটর", subtitle = "Auto-Sync NU Curriculum CRUD", onBackClick = onBack)
         TabRow(selectedTabIndex = selectedTab) {
             tabs.forEachIndexed { idx, label ->
                 Tab(selected = selectedTab == idx, onClick = { selectedTab = idx }, text = { Text(label) })
+            }
+        }
+        Surface(
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("admin_live_sync_banner")
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.CloudDone, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                Text(
+                    text = "অটো-সিঙ্ক চালু: এখানে যেকোনো পরিবর্তন সেভ করলে সকল শিক্ষার্থীর অ্যাপে রিয়েল-টাইমে আপডেট হয়ে যাবে।",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             }
         }
 
@@ -855,45 +1054,81 @@ fun AdminContentEditorScreen(
             when (selectedTab) {
                 0 -> {
                     item {
-                        var nameBn by remember { mutableStateOf("") }
-                        var nameEn by remember { mutableStateOf("") }
-                        var code by remember { mutableStateOf("") }
-                        var desc by remember { mutableStateOf("") }
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SectionHeader(title = "নতুন বিভাগ যুক্ত করুন")
-                                OutlinedTextField(value = nameBn, onValueChange = { nameBn = it }, label = { Text("বিভাগের বাংলা নাম *") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = nameEn, onValueChange = { nameEn = it }, label = { Text("English Name") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = code, onValueChange = { code = it }, label = { Text("Short Code (e.g., SOC)") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = desc, onValueChange = { desc = it }, label = { Text("বিবরণ") }, modifier = Modifier.fillMaxWidth())
-                                Button(
-                                    onClick = {
-                                        onSaveDepartment(
-                                            Department(
-                                                id = nameEn.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_'),
-                                                nameBn = nameBn.trim(),
-                                                nameEn = nameEn.trim(),
-                                                code = code.trim(),
-                                                description = desc.trim(),
-                                                sortOrder = (departments.size + 1).toLong()
+                                SectionHeader(title = if (editingDeptId.isBlank()) "নতুন বিভাগ যুক্ত করুন" else "বিভাগ সম্পাদনা করুন")
+                                OutlinedTextField(value = deptNameBn, onValueChange = { deptNameBn = it }, label = { Text("বিভাগের বাংলা নাম *") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = deptNameEn, onValueChange = { deptNameEn = it }, label = { Text("English Name") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = deptCode, onValueChange = { deptCode = it }, label = { Text("Short Code (e.g., SOC)") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = deptDesc, onValueChange = { deptDesc = it }, label = { Text("বিবরণ") }, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = deptStatus == "published", onClick = { deptStatus = "published" }, label = { Text("Published (Live)") })
+                                    FilterChip(selected = deptStatus == "draft", onClick = { deptStatus = "draft" }, label = { Text("Draft (Hidden)") })
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    if (editingDeptId.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                editingDeptId = ""; deptNameBn = ""; deptNameEn = ""; deptCode = ""; deptDesc = ""; deptStatus = "published"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("বাতিল") }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val computedId = editingDeptId.ifBlank {
+                                                deptNameEn.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_')
+                                            }
+                                            val existingOrder = departments.firstOrNull { it.id == computedId }?.sortOrder
+                                            val existingStructured = departments.firstOrNull { it.id == computedId }?.hasStructuredSolution ?: false
+                                            onSaveDepartment(
+                                                Department(
+                                                    id = computedId,
+                                                    nameBn = deptNameBn.trim(),
+                                                    nameEn = deptNameEn.trim(),
+                                                    code = deptCode.trim(),
+                                                    description = deptDesc.trim(),
+                                                    hasStructuredSolution = existingStructured,
+                                                    sortOrder = existingOrder ?: (departments.size + 1).toLong(),
+                                                    status = deptStatus
+                                                )
                                             )
-                                        )
-                                        nameBn = ""; nameEn = ""; code = ""; desc = ""
-                                    },
-                                    enabled = nameBn.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("বিভাগ সংরক্ষণ করুন")
+                                            editingDeptId = ""; deptNameBn = ""; deptNameEn = ""; deptCode = ""; deptDesc = ""; deptStatus = "published"
+                                        },
+                                        enabled = deptNameBn.isNotBlank(),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (editingDeptId.isBlank()) "বিভাগ প্রকাশ করুন" else "আপডেট ও সিঙ্ক করুন")
+                                    }
                                 }
                             }
                         }
                     }
+
                     items(departments, key = { it.id }) { dept ->
                         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("${dept.nameBn} (${dept.nameEn})", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${dept.nameBn} (${dept.nameEn})", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                        Surface(
+                                            color = if (dept.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(if (dept.status == "published") "LIVE" else "DRAFT", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
                                     Text(dept.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = {
+                                    editingDeptId = dept.id
+                                    deptNameBn = dept.nameBn
+                                    deptNameEn = dept.nameEn
+                                    deptCode = dept.code
+                                    deptDesc = dept.description
+                                    deptStatus = dept.status
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit department")
                                 }
                                 IconButton(onClick = { onDeleteDepartment(dept.id) }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete department")
@@ -904,51 +1139,96 @@ fun AdminContentEditorScreen(
                 }
                 1 -> {
                     item {
-                        var year by remember { mutableLongStateOf(1L) }
-                        var courseCode by remember { mutableStateOf("") }
-                        var titleBn by remember { mutableStateOf("") }
-                        var titleEn by remember { mutableStateOf("") }
-                        var note by remember { mutableStateOf("") }
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SectionHeader(title = "নতুন বিষয় / কোর্স যুক্ত করুন (রাষ্ট্রবিজ্ঞান)")
-                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    items(listOf(1L, 2L, 3L, 4L)) { yr ->
-                                        FilterChip(selected = year == yr, onClick = { year = yr }, label = { Text("Year $yr") })
+                                SectionHeader(title = if (editingSubjectId.isBlank()) "নতুন বিষয় / কোর্স যুক্ত করুন" else "বিষয় / কোর্স সম্পাদনা করুন")
+                                Text("বিভাগ নির্বাচন করুন", style = MaterialTheme.typography.labelMedium)
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.testTag("admin_subject_dept_picker")
+                                ) {
+                                    items(departments, key = { it.id }) { dept ->
+                                        FilterChip(
+                                            selected = subjDeptId == dept.id,
+                                            onClick = { subjDeptId = dept.id },
+                                            label = { Text(dept.nameBn) }
+                                        )
                                     }
                                 }
-                                OutlinedTextField(value = courseCode, onValueChange = { courseCode = it }, label = { Text("NU Course Code *") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = titleBn, onValueChange = { titleBn = it }, label = { Text("বাংলা শিরোনাম *") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = titleEn, onValueChange = { titleEn = it }, label = { Text("English Title") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Syllabus Note") }, modifier = Modifier.fillMaxWidth())
-                                Button(
-                                    onClick = {
-                                        onSaveSubject(
-                                            Subject(
-                                                departmentId = "political_science",
-                                                yearNumber = year,
-                                                courseCode = courseCode.trim(),
-                                                titleBn = titleBn.trim(),
-                                                titleEn = titleEn.trim(),
-                                                syllabusNote = note.trim()
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(listOf(1L, 2L, 3L, 4L)) { yr ->
+                                        FilterChip(selected = subjYear == yr, onClick = { subjYear = yr }, label = { Text("Year $yr") })
+                                    }
+                                }
+                                OutlinedTextField(value = subjCourseCode, onValueChange = { subjCourseCode = it }, label = { Text("NU Course Code *") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = subjTitleBn, onValueChange = { subjTitleBn = it }, label = { Text("বাংলা শিরোনাম *") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = subjTitleEn, onValueChange = { subjTitleEn = it }, label = { Text("English Title") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = subjNote, onValueChange = { subjNote = it }, label = { Text("Syllabus Note") }, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = subjStatus == "published", onClick = { subjStatus = "published" }, label = { Text("Published (Live)") })
+                                    FilterChip(selected = subjStatus == "draft", onClick = { subjStatus = "draft" }, label = { Text("Draft (Hidden)") })
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    if (editingSubjectId.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                editingSubjectId = ""; subjCourseCode = ""; subjTitleBn = ""; subjTitleEn = ""; subjNote = ""; subjStatus = "published"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("বাতিল") }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            onSaveSubject(
+                                                Subject(
+                                                    id = editingSubjectId,
+                                                    departmentId = subjDeptId,
+                                                    yearNumber = subjYear,
+                                                    courseCode = subjCourseCode.trim(),
+                                                    titleBn = subjTitleBn.trim(),
+                                                    titleEn = subjTitleEn.trim(),
+                                                    syllabusNote = subjNote.trim(),
+                                                    status = subjStatus
+                                                )
                                             )
-                                        )
-                                        courseCode = ""; titleBn = ""; titleEn = ""; note = ""
-                                    },
-                                    enabled = courseCode.isNotBlank() && titleBn.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("বিষয় প্রকাশ করুন")
+                                            editingSubjectId = ""; subjCourseCode = ""; subjTitleBn = ""; subjTitleEn = ""; subjNote = ""; subjStatus = "published"
+                                        },
+                                        enabled = subjCourseCode.isNotBlank() && subjTitleBn.isNotBlank(),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (editingSubjectId.isBlank()) "বিষয় প্রকাশ করুন" else "আপডেট ও সিঙ্ক করুন")
+                                    }
                                 }
                             }
                         }
                     }
                     items(subjects, key = { it.id }) { subj ->
+                        val deptName = departments.firstOrNull { it.id == subj.departmentId }?.nameBn ?: subj.departmentId
                         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("${subj.courseCode} • ${subj.titleBn}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                    Text("অনার্স ${subj.yearNumber} বর্ষ • ${subj.titleEn}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${subj.courseCode} • ${subj.titleBn}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                        Surface(
+                                            color = if (subj.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(if (subj.status == "published") "LIVE" else "DRAFT", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text("$deptName • অনার্স ${subj.yearNumber} বর্ষ • ${subj.titleEn}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                IconButton(onClick = {
+                                    editingSubjectId = subj.id
+                                    subjDeptId = subj.departmentId.ifBlank { "political_science" }
+                                    subjYear = subj.yearNumber
+                                    subjCourseCode = subj.courseCode
+                                    subjTitleBn = subj.titleBn
+                                    subjTitleEn = subj.titleEn
+                                    subjNote = subj.syllabusNote
+                                    subjStatus = subj.status
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit subject")
                                 }
                                 IconButton(onClick = { onDeleteSubject(subj.id) }) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete subject")
@@ -959,78 +1239,106 @@ fun AdminContentEditorScreen(
                 }
                 2 -> {
                     item {
-                        var selectedSubjectId by remember { mutableStateOf(subjects.firstOrNull()?.id ?: "") }
-                        var chapNum by remember { mutableStateOf("1") }
-                        var titleBn by remember { mutableStateOf("") }
-                        var summary by remember { mutableStateOf("") }
-                        var definitions by remember { mutableStateOf("") }
-                        var shortQ by remember { mutableStateOf("") }
-                        var broadQ by remember { mutableStateOf("") }
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SectionHeader(title = "অধ্যায় ও পাঠ্য বিষয়বস্তু যুক্ত করুন")
+                                SectionHeader(title = if (editingChapterId.isBlank()) "অধ্যায় ও পাঠ্য বিষয়বস্তু যুক্ত করুন" else "অধ্যায় সম্পাদনা করুন")
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(subjects, key = { it.id }) { subj ->
-                                        FilterChip(selected = selectedSubjectId == subj.id, onClick = { selectedSubjectId = subj.id }, label = { Text(subj.courseCode) })
+                                        FilterChip(selected = chapSubjectId == subj.id, onClick = { chapSubjectId = subj.id }, label = { Text("${subj.courseCode} (${subj.titleBn.take(14)})") })
                                     }
                                 }
                                 OutlinedTextField(value = chapNum, onValueChange = { chapNum = it }, label = { Text("Chapter Number") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = titleBn, onValueChange = { titleBn = it }, label = { Text("অধ্যায়ের নাম *") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = summary, onValueChange = { summary = it }, label = { Text("অধ্যায়ের সারসংক্ষেপ") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = definitions, onValueChange = { definitions = it }, label = { Text("গুরুত্বপূর্ণ সংজ্ঞা") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = shortQ, onValueChange = { shortQ = it }, label = { Text("সংক্ষিপ্ত প্রশ্ন ও উত্তর") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = broadQ, onValueChange = { broadQ = it }, label = { Text("রচনামূলক প্রশ্ন ও উত্তর") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
-                                Button(
-                                    onClick = {
-                                        val subj = subjects.firstOrNull { it.id == selectedSubjectId }
-                                        onSaveChapter(
-                                            Chapter(
-                                                subjectId = selectedSubjectId,
-                                                yearNumber = subj?.yearNumber ?: 1L,
-                                                chapterNumber = chapNum.toLongOrNull() ?: 1L,
-                                                titleBn = titleBn.trim(),
-                                                summary = summary.trim(),
-                                                definitions = definitions.trim(),
-                                                shortQuestions = shortQ.trim(),
-                                                broadQuestions = broadQ.trim()
+                                OutlinedTextField(value = chapTitleBn, onValueChange = { chapTitleBn = it }, label = { Text("অধ্যায়ের নাম *") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = chapSummary, onValueChange = { chapSummary = it }, label = { Text("অধ্যায়ের সারসংক্ষেপ") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = chapDefinitions, onValueChange = { chapDefinitions = it }, label = { Text("গুরুত্বপূর্ণ সংজ্ঞা") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = chapShortQ, onValueChange = { chapShortQ = it }, label = { Text("সংক্ষিপ্ত প্রশ্ন ও উত্তর") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = chapBroadQ, onValueChange = { chapBroadQ = it }, label = { Text("রচনামূলক প্রশ্ন ও উত্তর") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = chapStatus == "published", onClick = { chapStatus = "published" }, label = { Text("Published (Live)") })
+                                    FilterChip(selected = chapStatus == "draft", onClick = { chapStatus = "draft" }, label = { Text("Draft (Hidden)") })
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    if (editingChapterId.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                editingChapterId = ""; chapTitleBn = ""; chapSummary = ""; chapDefinitions = ""; chapShortQ = ""; chapBroadQ = ""; chapStatus = "published"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("বাতিল") }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val subj = subjects.firstOrNull { it.id == chapSubjectId }
+                                            onSaveChapter(
+                                                Chapter(
+                                                    id = editingChapterId,
+                                                    subjectId = chapSubjectId,
+                                                    yearNumber = subj?.yearNumber ?: 1L,
+                                                    chapterNumber = chapNum.toLongOrNull() ?: 1L,
+                                                    titleBn = chapTitleBn.trim(),
+                                                    summary = chapSummary.trim(),
+                                                    definitions = chapDefinitions.trim(),
+                                                    shortQuestions = chapShortQ.trim(),
+                                                    broadQuestions = chapBroadQ.trim(),
+                                                    status = chapStatus
+                                                )
                                             )
-                                        )
-                                        titleBn = ""; summary = ""; definitions = ""; shortQ = ""; broadQ = ""
-                                    },
-                                    enabled = selectedSubjectId.isNotBlank() && titleBn.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("অধ্যায় সংরক্ষণ করুন")
+                                            editingChapterId = ""; chapTitleBn = ""; chapSummary = ""; chapDefinitions = ""; chapShortQ = ""; chapBroadQ = ""; chapStatus = "published"
+                                        },
+                                        enabled = chapSubjectId.isNotBlank() && chapTitleBn.isNotBlank(),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (editingChapterId.isBlank()) "অধ্যায় সংরক্ষণ করুন" else "আপডেট ও সিঙ্ক করুন")
+                                    }
                                 }
                             }
                         }
                     }
                     items(chapters, key = { it.id }) { ch ->
                         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("অধ্যায় ${ch.chapterNumber}: ${ch.titleBn}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                Text(ch.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("অধ্যায় ${ch.chapterNumber}: ${ch.titleBn}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                        Surface(
+                                            color = if (ch.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(if (ch.status == "published") "LIVE" else "DRAFT", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text(ch.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                }
+                                IconButton(onClick = {
+                                    editingChapterId = ch.id
+                                    chapSubjectId = ch.subjectId
+                                    chapNum = ch.chapterNumber.toString()
+                                    chapTitleBn = ch.titleBn
+                                    chapSummary = ch.summary
+                                    chapDefinitions = ch.definitions
+                                    chapShortQ = ch.shortQuestions
+                                    chapBroadQ = ch.broadQuestions
+                                    chapStatus = ch.status
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit chapter")
+                                }
+                                IconButton(onClick = { onDeleteChapter(ch.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete chapter")
+                                }
                             }
                         }
                     }
                 }
                 else -> {
                     item {
-                        var qType by remember { mutableStateOf("previous_year") }
-                        var year by remember { mutableLongStateOf(1L) }
-                        var subjectName by remember { mutableStateOf("রাজনৈতিক তত্ত্ব পরিচিতি") }
-                        var examYear by remember { mutableStateOf("2024") }
-                        var prompt by remember { mutableStateOf("") }
-                        var answerText by remember { mutableStateOf("") }
-                        var optA by remember { mutableStateOf("") }
-                        var optB by remember { mutableStateOf("") }
-                        var optC by remember { mutableStateOf("") }
-                        var optD by remember { mutableStateOf("") }
-                        var correctIdx by remember { mutableIntStateOf(0) }
-
                         Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                SectionHeader(title = "প্রশ্ন / সাজেশন / MCQ যোগ করুন")
+                                SectionHeader(title = if (editingQuestionId.isBlank()) "প্রশ্ন / সাজেশন / MCQ যোগ করুন" else "প্রশ্ন সম্পাদনা করুন")
+                                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    items(departments, key = { it.id }) { dept ->
+                                        FilterChip(selected = qDeptId == dept.id, onClick = { qDeptId = dept.id }, label = { Text(dept.nameBn) })
+                                    }
+                                }
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     FilterChip(selected = qType == "previous_year", onClick = { qType = "previous_year" }, label = { Text("Previous") })
                                     FilterChip(selected = qType == "suggestion", onClick = { qType = "suggestion" }, label = { Text("Suggestion") })
@@ -1038,55 +1346,103 @@ fun AdminContentEditorScreen(
                                 }
                                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     items(listOf(1L, 2L, 3L, 4L)) { yr ->
-                                        FilterChip(selected = year == yr, onClick = { year = yr }, label = { Text("Year $yr") })
+                                        FilterChip(selected = qYear == yr, onClick = { qYear = yr }, label = { Text("Year $yr") })
                                     }
                                 }
-                                OutlinedTextField(value = subjectName, onValueChange = { subjectName = it }, label = { Text("বিষয়ের নাম") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = examYear, onValueChange = { examYear = it }, label = { Text("Exam Year / Tag") }, modifier = Modifier.fillMaxWidth())
-                                OutlinedTextField(value = prompt, onValueChange = { prompt = it }, label = { Text("প্রশ্ন *") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = qSubjectName, onValueChange = { qSubjectName = it }, label = { Text("বিষয়ের নাম") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = qExamYear, onValueChange = { qExamYear = it }, label = { Text("Exam Year / Tag") }, modifier = Modifier.fillMaxWidth())
+                                OutlinedTextField(value = qPrompt, onValueChange = { qPrompt = it }, label = { Text("প্রশ্ন *") }, maxLines = 3, modifier = Modifier.fillMaxWidth())
                                 if (qType == "mcq") {
-                                    OutlinedTextField(value = optA, onValueChange = { optA = it }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth())
-                                    OutlinedTextField(value = optB, onValueChange = { optB = it }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth())
-                                    OutlinedTextField(value = optC, onValueChange = { optC = it }, label = { Text("Option C") }, modifier = Modifier.fillMaxWidth())
-                                    OutlinedTextField(value = optD, onValueChange = { optD = it }, label = { Text("Option D") }, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = qOptA, onValueChange = { qOptA = it }, label = { Text("Option A") }, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = qOptB, onValueChange = { qOptB = it }, label = { Text("Option B") }, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = qOptC, onValueChange = { qOptC = it }, label = { Text("Option C") }, modifier = Modifier.fillMaxWidth())
+                                    OutlinedTextField(value = qOptD, onValueChange = { qOptD = it }, label = { Text("Option D") }, modifier = Modifier.fillMaxWidth())
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         listOf(0, 1, 2, 3).forEach { idx ->
-                                            FilterChip(selected = correctIdx == idx, onClick = { correctIdx = idx }, label = { Text("Ans: ${'A' + idx}") })
+                                            FilterChip(selected = qCorrectIdx == idx, onClick = { qCorrectIdx = idx }, label = { Text("Ans: ${'A' + idx}") })
                                         }
                                     }
                                 }
-                                OutlinedTextField(value = answerText, onValueChange = { answerText = it }, label = { Text("উত্তর / ব্যাখ্যা") }, maxLines = 4, modifier = Modifier.fillMaxWidth())
-                                Button(
-                                    onClick = {
-                                        val opts = if (qType == "mcq") listOf(optA, optB, optC, optD).filter { it.isNotBlank() } else emptyList()
-                                        onSaveQuestion(
-                                            StudyQuestion(
-                                                yearNumber = year,
-                                                subjectName = subjectName.trim(),
-                                                questionType = qType,
-                                                examYear = examYear.trim(),
-                                                prompt = prompt.trim(),
-                                                answerText = answerText.trim(),
-                                                options = opts,
-                                                correctOptionIndex = correctIdx.toLong(),
-                                                explanation = answerText.trim()
+                                OutlinedTextField(value = qAnswerText, onValueChange = { qAnswerText = it }, label = { Text("উত্তর / ব্যাখ্যা") }, maxLines = 4, modifier = Modifier.fillMaxWidth())
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    FilterChip(selected = qStatus == "published", onClick = { qStatus = "published" }, label = { Text("Published (Live)") })
+                                    FilterChip(selected = qStatus == "draft", onClick = { qStatus = "draft" }, label = { Text("Draft (Hidden)") })
+                                }
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    if (editingQuestionId.isNotBlank()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                editingQuestionId = ""; qPrompt = ""; qAnswerText = ""; qOptA = ""; qOptB = ""; qOptC = ""; qOptD = ""; qStatus = "published"
+                                            },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("বাতিল") }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            val opts = if (qType == "mcq") listOf(qOptA, qOptB, qOptC, qOptD).filter { it.isNotBlank() } else emptyList()
+                                            onSaveQuestion(
+                                                StudyQuestion(
+                                                    id = editingQuestionId,
+                                                    departmentId = qDeptId,
+                                                    yearNumber = qYear,
+                                                    subjectName = qSubjectName.trim(),
+                                                    questionType = qType,
+                                                    examYear = qExamYear.trim(),
+                                                    prompt = qPrompt.trim(),
+                                                    answerText = qAnswerText.trim(),
+                                                    options = opts,
+                                                    correctOptionIndex = qCorrectIdx.toLong(),
+                                                    explanation = qAnswerText.trim(),
+                                                    status = qStatus
+                                                )
                                             )
-                                        )
-                                        prompt = ""; answerText = ""; optA = ""; optB = ""; optC = ""; optD = ""
-                                    },
-                                    enabled = prompt.isNotBlank(),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("প্রশ্ন প্রকাশ করুন")
+                                            editingQuestionId = ""; qPrompt = ""; qAnswerText = ""; qOptA = ""; qOptB = ""; qOptC = ""; qOptD = ""; qStatus = "published"
+                                        },
+                                        enabled = qPrompt.isNotBlank(),
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Text(if (editingQuestionId.isBlank()) "প্রশ্ন প্রকাশ করুন" else "আপডেট ও সিঙ্ক করুন")
+                                    }
                                 }
                             }
                         }
                     }
                     items(questions, key = { it.id }) { q ->
                         Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text("${q.questionType.uppercase()} • ${q.subjectName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                                Text(q.prompt, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                            Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("${q.questionType.uppercase()} • ${q.subjectName}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f, fill = false))
+                                        Surface(
+                                            color = if (q.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(if (q.status == "published") "LIVE" else "DRAFT", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text(q.prompt, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                }
+                                IconButton(onClick = {
+                                    editingQuestionId = q.id
+                                    qDeptId = q.departmentId.ifBlank { "political_science" }
+                                    qType = q.questionType
+                                    qYear = q.yearNumber
+                                    qSubjectName = q.subjectName
+                                    qExamYear = q.examYear
+                                    qPrompt = q.prompt
+                                    qAnswerText = q.answerText.ifBlank { q.explanation }
+                                    qOptA = q.options.getOrNull(0).orEmpty()
+                                    qOptB = q.options.getOrNull(1).orEmpty()
+                                    qOptC = q.options.getOrNull(2).orEmpty()
+                                    qOptD = q.options.getOrNull(3).orEmpty()
+                                    qCorrectIdx = q.correctOptionIndex.toInt().coerceIn(0, 3)
+                                    qStatus = q.status
+                                }) {
+                                    Icon(Icons.Default.Edit, contentDescription = "Edit question")
+                                }
+                                IconButton(onClick = { onDeleteQuestion(q.id) }) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete question")
+                                }
                             }
                         }
                     }
@@ -1103,17 +1459,19 @@ fun AdminAnnouncementScreen(
     onSaveAnnouncement: (Announcement) -> Unit,
     onDeleteAnnouncement: (String) -> Unit
 ) {
+    var editingId by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var tag by remember { mutableStateOf("NU Notice") }
     var pinned by remember { mutableStateOf(true) }
+    var status by remember { mutableStateOf("published") }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        HonoursTopBar(title = "ঘোষণা ও নোটিশ ম্যানেজার", subtitle = "Announcements Management", onBackClick = onBack)
+        HonoursTopBar(title = "ঘোষণা ও নোটিশ ম্যানেজার", subtitle = "Announcements Auto-Sync", onBackClick = onBack)
 
         LazyColumn(
             modifier = Modifier
@@ -1126,7 +1484,7 @@ fun AdminAnnouncementScreen(
             item {
                 Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        SectionHeader(title = "নতুন ঘোষণা প্রকাশ করুন")
+                        SectionHeader(title = if (editingId.isBlank()) "নতুন ঘোষণা প্রকাশ করুন" else "ঘোষণা সম্পাদনা করুন")
                         OutlinedTextField(value = title, onValueChange = { title = it }, label = { Text("শিরোনাম *") }, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = body, onValueChange = { body = it }, label = { Text("বিস্তারিত বার্তা *") }, maxLines = 4, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = tag, onValueChange = { tag = it }, label = { Text("ট্যাগ (e.g., NU Notice, Exam Update)") }, modifier = Modifier.fillMaxWidth())
@@ -1134,17 +1492,38 @@ fun AdminAnnouncementScreen(
                             Text("হোম স্ক্রিনে পিন করুন")
                             Switch(checked = pinned, onCheckedChange = { pinned = it })
                         }
-                        Button(
-                            onClick = {
-                                onSaveAnnouncement(Announcement(title = title.trim(), body = body.trim(), tag = tag.trim(), pinned = pinned))
-                                title = ""; body = ""
-                            },
-                            enabled = title.isNotBlank() && body.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Campaign, contentDescription = null)
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("ঘোষণা প্রকাশ করুন")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = status == "published", onClick = { status = "published" }, label = { Text("Published (Live)") })
+                            FilterChip(selected = status == "draft", onClick = { status = "draft" }, label = { Text("Draft (Hidden)") })
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                            if (editingId.isNotBlank()) {
+                                OutlinedButton(
+                                    onClick = { editingId = ""; title = ""; body = ""; tag = "NU Notice"; pinned = true; status = "published" },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("বাতিল") }
+                            }
+                            Button(
+                                onClick = {
+                                    onSaveAnnouncement(
+                                        Announcement(
+                                            id = editingId,
+                                            title = title.trim(),
+                                            body = body.trim(),
+                                            tag = tag.trim(),
+                                            pinned = pinned,
+                                            status = status
+                                        )
+                                    )
+                                    editingId = ""; title = ""; body = ""; status = "published"
+                                },
+                                enabled = title.isNotBlank() && body.isNotBlank(),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Campaign, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(if (editingId.isBlank()) "ঘোষণা প্রকাশ করুন" else "আপডেট ও সিঙ্ক করুন")
+                            }
                         }
                     }
                 }
@@ -1156,9 +1535,25 @@ fun AdminAnnouncementScreen(
                         Column(modifier = Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 if (ann.pinned) Icon(Icons.Default.PushPin, contentDescription = "Pinned", modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-                                Text(ann.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                Text(ann.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f, fill = false))
+                                Surface(
+                                    color = if (ann.status == "published") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(if (ann.status == "published") "LIVE" else "DRAFT", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                }
                             }
                             Text(ann.body, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        IconButton(onClick = {
+                            editingId = ann.id
+                            title = ann.title
+                            body = ann.body
+                            tag = ann.tag
+                            pinned = ann.pinned
+                            status = ann.status
+                        }) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit announcement")
                         }
                         IconButton(onClick = { onDeleteAnnouncement(ann.id) }) {
                             Icon(Icons.Default.Delete, contentDescription = "Delete announcement")

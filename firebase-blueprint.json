@@ -20,7 +20,8 @@
         "aiUsageCount": { "type": "integer" },
         "purchasedAiCredits": { "type": "integer" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "updatedAt": { "type": "string", "format": "date-time" }
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "lastActiveAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "displayName", "selectedDepartmentId", "selectedYear", "createdAt", "updatedAt"]
     },

@@ -139,4 +139,12 @@ class PreferencesManager(private val context: Context) {
             prefs[Keys.ADMIN_LOCKOUT_UNTIL_MS] = 0L
         }
     }
+
+    suspend fun clearUserSessionData() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(Keys.SEARCH_HISTORY)
+            prefs.remove(Keys.RECENT_PDF_IDS)
+            prefs.remove(Keys.RECENT_SUBJECT_IDS)
+        }
+    }
 }

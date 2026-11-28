@@ -69,7 +69,8 @@ service cloud.firestore {
         (!('aiUsageCount' in data) || (data.aiUsageCount is int && data.aiUsageCount >= 0)) &&
         (!('purchasedAiCredits' in data) || (data.purchasedAiCredits is int && data.purchasedAiCredits >= 0)) &&
         isValidTimestamp(data.createdAt) &&
-        isValidTimestamp(data.updatedAt);
+        isValidTimestamp(data.updatedAt) &&
+        (!('lastActiveAt' in data) || isValidTimestamp(data.lastActiveAt));
     }
 
     function effectiveUserFreeLimit(data) {
@@ -332,7 +333,7 @@ service cloud.firestore {
               'displayName', 'email', 'photoUrl', 'selectedDepartmentId',
               'selectedDepartmentName', 'selectedYear', 'languagePreference',
               'savedAnswersCount', 'bookmarksCount', 'testsCompletedCount',
-              'aiUsageCount', 'updatedAt'
+              'aiUsageCount', 'updatedAt', 'lastActiveAt'
             ]) &&
             (!('aiUsageCount' in incoming().diff(existing()).affectedKeys()) || isValidAiUsageIncrement())
           ) ||

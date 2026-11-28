@@ -26,7 +26,8 @@ data class UserProfile(
     val aiUsageCount: Long = 0L,
     val purchasedAiCredits: Long = 0L,
     @ServerTimestamp val createdAt: Timestamp? = null,
-    @ServerTimestamp val updatedAt: Timestamp? = null
+    @ServerTimestamp val updatedAt: Timestamp? = null,
+    @ServerTimestamp val lastActiveAt: Timestamp? = null
 ) {
     @get:Exclude
     val totalAiLimit: Long
@@ -289,4 +290,25 @@ data class AiLimitPurchaseRequest(
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 )
+
+@Keep
+@IgnoreExtraProperties
+data class CatalogMetaConfig(
+    val seeded: Boolean = false,
+    val pdfSeedVersion: Long = 0L,
+    val suppressedIds: List<String> = emptyList(),
+    val deletedIds: List<String> = emptyList(),
+    val draftIds: List<String> = emptyList()
+)
+
+data class AdminUserUsageSummary(
+    val totalUsers: Int = 0,
+    val activeTodayCount: Int = 0,
+    val activeLast7DaysCount: Int = 0,
+    val newUsersLast7DaysCount: Int = 0,
+    val totalAiQueriesUsed: Long = 0L,
+    val departmentCounts: List<Pair<String, Int>> = emptyList(),
+    val yearCounts: List<Pair<Long, Int>> = emptyList()
+)
+
 

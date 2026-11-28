@@ -16,6 +16,7 @@ import com.example.data.model.AiLimitPurchaseRequest
 import com.example.data.model.AiRemoteConfig
 import com.example.data.model.Announcement
 import com.example.data.model.BookmarkItem
+import com.example.data.model.CatalogMetaConfig
 import com.example.data.model.CollegeProfileConfig
 import com.example.data.model.CollegeSectionBlock
 import com.example.data.model.DeveloperProfileConfig
@@ -23,6 +24,8 @@ import com.example.data.model.ModelTestResult
 import com.example.data.model.UiState
 import com.example.data.model.UserProfile
 import com.example.data.repository.FirestoreRepository
+import com.example.data.repository.mergeCatalogItems
+import com.example.data.repository.observeCatalogMeta
 import com.example.ui.theme.AppThemeMode
 import com.google.firebase.firestore.FirebaseFirestoreException
 import kotlinx.coroutines.CancellationException
@@ -32,6 +35,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -80,12 +84,20 @@ class MainViewModel(
         .asUiState("Failed to load test history")
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), UiState.Loading)
 
-    val announcements: StateFlow<List<Announcement>> = firestoreRepo.observePublishedAnnouncements()
+    val announcements: StateFlow<List<Announcement>> = combine(
+        firestoreRepo.observePublishedAnnouncements(),
+        firestoreRepo.observeCatalogMeta().catch { error ->
+            unwrapFirestoreErrorOrThrow(error, "catalog_meta")
+            emit(CatalogMetaConfig())
+        }
+    ) { live, meta ->
+        mergeCatalogItems(live, AcademicSeedCatalog.starterAnnouncements, meta, includeDrafts = false) { it.id }
+            .sortedWith(compareByDescending<Announcement> { it.pinned }.thenByDescending { it.createdAt?.seconds ?: 0L })
+    }
         .catch { error ->
             unwrapFirestoreErrorOrThrow(error, "announcements")
             emit(AcademicSeedCatalog.starterAnnouncements)
         }
-        .map { list -> list.ifEmpty { AcademicSeedCatalog.starterAnnouncements } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AcademicSeedCatalog.starterAnnouncements)
 
     val aiRemoteConfig: StateFlow<AiRemoteConfig> = firestoreRepo.observeAiRemoteConfig()

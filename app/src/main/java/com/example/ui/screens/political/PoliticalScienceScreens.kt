@@ -196,7 +196,10 @@ fun HonoursYearScreen(
     val yearTitle = AcademicSeedCatalog.honoursYears.firstOrNull { it.first == yearNumber }?.second
         ?: "রাষ্ট্রবিজ্ঞান – অনার্স $yearNumber বর্ষ"
     val yearSubjects = remember(subjects, yearNumber) {
-        subjects.filter { it.yearNumber == yearNumber.toLong() }
+        subjects.filter {
+            (it.departmentId == "political_science" || it.departmentId.isBlank()) &&
+                it.yearNumber == yearNumber.toLong()
+        }
     }
     val yearPdfs = remember(pdfs, yearNumber) {
         pdfs.filter { it.departmentId == "political_science" && it.yearNumber == yearNumber.toLong() }

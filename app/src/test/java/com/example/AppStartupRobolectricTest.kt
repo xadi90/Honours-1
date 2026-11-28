@@ -8,6 +8,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import com.example.data.catalog.AcademicSeedCatalog
 import com.example.data.model.AiLimitConfig
 import com.example.data.model.AiQuotaState
@@ -38,7 +39,11 @@ class AppStartupRobolectricTest {
     @Test
     fun `main activity transitions from splash to onboarding to auth without crashing`() {
         composeRule.waitForIdle()
-        composeRule.mainClock.advanceTimeBy(2500L)
+        composeRule.mainClock.advanceTimeBy(4000L)
+        composeRule.waitUntil(timeoutMillis = 5000L) {
+            composeRule.onAllNodes(hasTestTag("onboarding_skip_button")).fetchSemanticsNodes().isNotEmpty() ||
+                composeRule.onAllNodes(hasTestTag("google_sign_in_button"), useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.waitForIdle()
         val skipNodes = composeRule.onAllNodes(hasTestTag("onboarding_skip_button")).fetchSemanticsNodes()
         if (skipNodes.isNotEmpty()) {
@@ -220,6 +225,8 @@ class HomeAndFallbackRobolectricTest {
             }
         }
         composeRule.waitForIdle()
+        composeRule.onNodeWithTag("admin_dashboard_list")
+            .performScrollToNode(hasTestTag("admin_nav_ai_limits"))
         composeRule.onNodeWithTag("admin_nav_ai_limits").assertExists()
     }
 

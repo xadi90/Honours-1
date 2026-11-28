@@ -44,14 +44,17 @@ import kotlinx.coroutines.tasks.await
 import java.security.MessageDigest
 
 class FirestoreRepository(
-    private val db: FirebaseFirestore,
-    private val auth: FirebaseAuth = Firebase.auth
+    internal val db: FirebaseFirestore,
+    internal val auth: FirebaseAuth = Firebase.auth
 ) {
     constructor(context: Context) : this(
         FirebaseFirestore.getInstance(
             context.applicationContext.getString(R.string.firestore_database_id)
         )
     )
+
+    @Volatile
+    private var lastHeartbeatUid: String? = null
 
     companion object {
         private val BOOTSTRAPPED_ADMIN_EMAILS = setOf(
@@ -60,7 +63,7 @@ class FirestoreRepository(
         )
     }
 
-    private fun requireUserId(): String {
+    internal fun requireUserId(): String {
         return auth.currentUser?.uid
             ?: throw IllegalStateException("Please sign in with Google to access this feature.")
     }
@@ -167,9 +170,19 @@ class FirestoreRepository(
                     "aiUsageCount" to 0L,
                     "purchasedAiCredits" to 0L,
                     "createdAt" to FieldValue.serverTimestamp(),
-                    "updatedAt" to FieldValue.serverTimestamp()
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                    "lastActiveAt" to FieldValue.serverTimestamp()
                 )
                 docRef.set(payload).await()
+                lastHeartbeatUid = user.uid
+            } else if (lastHeartbeatUid != user.uid) {
+                docRef.update(
+                    mapOf(
+                        "lastActiveAt" to FieldValue.serverTimestamp(),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                ).await()
+                lastHeartbeatUid = user.uid
             }
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -863,7 +876,7 @@ class FirestoreRepository(
         }
     }
 
-    suspend fun upsertDepartment(dept: Department): Result<Unit> {
+    suspend fun upsertDepartment(dept: Department, syncMeta: Boolean = true): Result<Unit> {
         val docId = dept.id.ifBlank { db.collection("departments").document().id }
         val docRef = db.collection("departments").document(docId)
         return try {
@@ -881,6 +894,9 @@ class FirestoreRepository(
                 "updatedAt" to FieldValue.serverTimestamp()
             )
             docRef.set(payload).await()
+            if (syncMeta) {
+                syncCatalogMetaEntry(docId, isDraft = dept.status == "draft", isDeleted = false)
+            }
             logAdminAction("UPSERT_DEPARTMENT", "${dept.nameBn} (${dept.nameEn})")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -896,6 +912,7 @@ class FirestoreRepository(
         return try {
             requireUserId()
             db.document(path).delete().await()
+            syncCatalogMetaEntry(departmentId, isDeleted = true)
             logAdminAction("DELETE_DEPARTMENT", "Deleted department $departmentId")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -906,7 +923,7 @@ class FirestoreRepository(
         }
     }
 
-    suspend fun upsertSubject(subject: Subject): Result<Unit> {
+    suspend fun upsertSubject(subject: Subject, syncMeta: Boolean = true): Result<Unit> {
         val docId = subject.id.ifBlank { db.collection("subjects").document().id }
         val docRef = db.collection("subjects").document(docId)
         return try {
@@ -926,6 +943,9 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            if (syncMeta) {
+                syncCatalogMetaEntry(docId, isDraft = subject.status == "draft", isDeleted = false)
+            }
             logAdminAction("UPSERT_SUBJECT", "${subject.courseCode}: ${subject.titleBn}")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -941,6 +961,7 @@ class FirestoreRepository(
         return try {
             requireUserId()
             db.document(path).delete().await()
+            syncCatalogMetaEntry(subjectId, isDeleted = true)
             logAdminAction("DELETE_SUBJECT", "Deleted subject $subjectId")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -951,7 +972,7 @@ class FirestoreRepository(
         }
     }
 
-    suspend fun upsertChapter(chapter: Chapter): Result<Unit> {
+    suspend fun upsertChapter(chapter: Chapter, syncMeta: Boolean = true): Result<Unit> {
         val docId = chapter.id.ifBlank { db.collection("chapters").document().id }
         val docRef = db.collection("chapters").document(docId)
         return try {
@@ -975,6 +996,9 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            if (syncMeta) {
+                syncCatalogMetaEntry(docId, isDraft = chapter.status == "draft", isDeleted = false)
+            }
             logAdminAction("UPSERT_CHAPTER", "Chapter ${chapter.chapterNumber}: ${chapter.titleBn}")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1012,6 +1036,7 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            syncCatalogMetaEntry(docId, isDraft = pdf.status == "draft", isDeleted = false)
             logAdminAction("UPLOAD_PDF", "${pdf.title} (${pdf.status})")
             Result.success(docId)
         } catch (e: CancellationException) {
@@ -1027,6 +1052,7 @@ class FirestoreRepository(
         return try {
             requireUserId()
             db.document(path).delete().await()
+            syncCatalogMetaEntry(pdfId, isDeleted = true)
             logAdminAction("DELETE_PDF", "Deleted PDF $pdfId")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1037,7 +1063,7 @@ class FirestoreRepository(
         }
     }
 
-    suspend fun upsertQuestion(question: StudyQuestion): Result<Unit> {
+    suspend fun upsertQuestion(question: StudyQuestion, syncMeta: Boolean = true): Result<Unit> {
         val docId = question.id.ifBlank { db.collection("questions").document().id }
         val docRef = db.collection("questions").document(docId)
         return try {
@@ -1064,6 +1090,9 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            if (syncMeta) {
+                syncCatalogMetaEntry(docId, isDraft = question.status == "draft", isDeleted = false)
+            }
             logAdminAction("UPSERT_QUESTION", "${question.questionType}: ${question.prompt.take(60)}")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1074,7 +1103,7 @@ class FirestoreRepository(
         }
     }
 
-    suspend fun upsertAnnouncement(announcement: Announcement): Result<Unit> {
+    suspend fun upsertAnnouncement(announcement: Announcement, syncMeta: Boolean = true): Result<Unit> {
         val docId = announcement.id.ifBlank { db.collection("announcements").document().id }
         val docRef = db.collection("announcements").document(docId)
         return try {
@@ -1091,6 +1120,9 @@ class FirestoreRepository(
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+            if (syncMeta) {
+                syncCatalogMetaEntry(docId, isDraft = announcement.status == "draft", isDeleted = false)
+            }
             logAdminAction("PUBLISH_ANNOUNCEMENT", announcement.title)
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1106,6 +1138,7 @@ class FirestoreRepository(
         return try {
             requireUserId()
             db.document(path).delete().await()
+            syncCatalogMetaEntry(id, isDeleted = true)
             logAdminAction("DELETE_ANNOUNCEMENT", "Deleted announcement $id")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -1196,26 +1229,27 @@ class FirestoreRepository(
             requireUserId()
             var count = 0
             for (dept in AcademicSeedCatalog.defaultDepartments) {
-                upsertDepartment(dept).getOrThrow()
+                upsertDepartment(dept, syncMeta = false).getOrThrow()
                 count++
             }
             for (subj in AcademicSeedCatalog.starterSubjects) {
-                upsertSubject(subj).getOrThrow()
+                upsertSubject(subj, syncMeta = false).getOrThrow()
                 count++
             }
             for (chap in AcademicSeedCatalog.starterChapters) {
-                upsertChapter(chap).getOrThrow()
+                upsertChapter(chap, syncMeta = false).getOrThrow()
                 count++
             }
             for (q in AcademicSeedCatalog.starterQuestions) {
-                upsertQuestion(q).getOrThrow()
+                upsertQuestion(q, syncMeta = false).getOrThrow()
                 count++
             }
             for (ann in AcademicSeedCatalog.starterAnnouncements) {
-                upsertAnnouncement(ann).getOrThrow()
+                upsertAnnouncement(ann, syncMeta = false).getOrThrow()
                 count++
             }
-            logAdminAction("SEED_CATALOG", "Published $count starter academic items to Firestore")
+            count += seedAllHonoursPdfsToFirestore().getOrThrow()
+            logAdminAction("SEED_CATALOG", "Published $count starter academic items & all-department PDFs to Firestore")
             Result.success(count)
         } catch (e: CancellationException) {
             throw e

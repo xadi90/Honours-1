@@ -504,3 +504,60 @@ test("Sujat Ali Honours College: admin can arrange sections & settings; students
   await assertSucceeds(adminDb.collection("college_sections").get());
 });
 
+test("User data anti-theft isolation & admin-only usage count listing", async () => {
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@example.com",
+    email_verified: true,
+  }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, {
+    email: "bob@example.com",
+    email_verified: true,
+  }).firestore();
+  const adminDb = testEnv.authenticatedContext("admin_1", {
+    email: ADMIN_EMAIL,
+    email_verified: true,
+  }).firestore();
+  const now = new Date(Date.now() - 1000);
+
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Alice",
+      email: "alice@example.com",
+      selectedDepartmentId: "political_science",
+      selectedYear: 1,
+      createdAt: now,
+      updatedAt: now,
+      lastActiveAt: now,
+    })
+  );
+
+  // Owner can update lastActiveAt heartbeat
+  await assertSucceeds(
+    aliceDb.collection("users").doc(ALICE_UID).update({
+      lastActiveAt: new Date(Date.now() - 200),
+      updatedAt: new Date(Date.now() - 200),
+    })
+  );
+
+  // Bob cannot list users, read Alice's profile, or write catalog_meta
+  await assertFails(bobDb.collection("users").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("bookmarks").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("ai_conversations").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("model_test_results").get());
+  await assertFails(
+    bobDb.collection("app_settings").doc("catalog_meta").set({
+      seeded: true,
+      pdfSeedVersion: 2,
+    })
+  );
+
+  // Verified bootstrapped admin can list users to count total & active users
+  const usersSnap = await assertSucceeds(adminDb.collection("users").get());
+  if (usersSnap.size !== 1) {
+    throw new Error(`Expected 1 user in admin listing, got ${usersSnap.size}`);
+  }
+});
+
+

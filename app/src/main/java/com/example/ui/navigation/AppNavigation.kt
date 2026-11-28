@@ -974,6 +974,7 @@ private fun MainAuthenticatedShell(
                             onOpenAdminPanel = { navigateToAdminGate() },
                             onOpenAboutDeveloper = { navController.navigate(AppRoutes.ABOUT_DEVELOPER) },
                             onSignOut = {
+                                scope.launch { prefs.clearUserSessionData() }
                                 signOut(credentialManager, scope)
                             },
                             developerProfile = developerProfile,
@@ -1048,12 +1049,16 @@ private fun MainAuthenticatedShell(
                         val reportsState by adminViewModel.reports.collectAsStateWithLifecycle()
                         val purchaseRequestsState by adminViewModel.purchaseRequests.collectAsStateWithLifecycle()
                         val adminLogs by adminViewModel.adminLogs.collectAsStateWithLifecycle()
+                        val usageSummary by adminViewModel.adminUsageSummary.collectAsStateWithLifecycle()
+                        val adminDepartments by adminViewModel.adminDepartments.collectAsStateWithLifecycle()
+                        val adminSubjects by adminViewModel.adminSubjects.collectAsStateWithLifecycle()
+                        val adminPdfs by adminViewModel.adminPdfs.collectAsStateWithLifecycle()
                         val openReportsCount = (reportsState as? UiState.Success)?.data?.count { it.status == "open" } ?: 0
                         val pendingPurchasesCount = (purchaseRequestsState as? UiState.Success)?.data?.count { it.status == "pending" } ?: 0
                         AdminDashboardScreen(
-                            departmentsCount = departments.size,
-                            subjectsCount = subjects.size,
-                            pdfsCount = pdfs.size,
+                            departmentsCount = adminDepartments.size,
+                            subjectsCount = adminSubjects.size,
+                            pdfsCount = adminPdfs.size,
                             openReportsCount = openReportsCount,
                             remoteConfig = aiRemoteConfig,
                             adminLogs = adminLogs,
@@ -1072,14 +1077,18 @@ private fun MainAuthenticatedShell(
                             onSaveDeveloperProfile = { adminViewModel.saveDeveloperProfile(it) },
                             pendingPurchasesCount = pendingPurchasesCount,
                             onNavigateAiLimits = { navController.navigate(AppRoutes.ADMIN_LIMIT_MANAGEMENT) },
-                            onNavigateCollegeEditor = { navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR) }
+                            onNavigateCollegeEditor = { navController.navigate(AppRoutes.ADMIN_COLLEGE_EDITOR) },
+                            userUsageSummary = usageSummary,
+                            onSeedAllPdfs = { adminViewModel.seedAllHonoursPdfs() }
                         )
                     }
 
                     composable(AppRoutes.ADMIN_PDF_UPLOAD) {
+                        val adminDepartments by adminViewModel.adminDepartments.collectAsStateWithLifecycle()
+                        val adminPdfs by adminViewModel.adminPdfs.collectAsStateWithLifecycle()
                         AdminPdfUploadScreen(
-                            departments = departments,
-                            pdfs = pdfs,
+                            departments = adminDepartments,
+                            pdfs = adminPdfs,
                             onBack = { navController.popBackStack() },
                             onUploadPdf = { pdf, uri -> adminViewModel.uploadPdfResource(pdf, uri) },
                             onDeletePdf = { adminViewModel.deletePdf(it) }
@@ -1087,24 +1096,31 @@ private fun MainAuthenticatedShell(
                     }
 
                     composable(AppRoutes.ADMIN_CONTENT_EDITOR) {
+                        val adminDepartments by adminViewModel.adminDepartments.collectAsStateWithLifecycle()
+                        val adminSubjects by adminViewModel.adminSubjects.collectAsStateWithLifecycle()
+                        val adminChapters by adminViewModel.adminChapters.collectAsStateWithLifecycle()
+                        val adminQuestions by adminViewModel.adminQuestions.collectAsStateWithLifecycle()
                         AdminContentEditorScreen(
-                            departments = departments,
-                            subjects = subjects,
-                            chapters = chapters,
-                            questions = questions,
+                            departments = adminDepartments,
+                            subjects = adminSubjects,
+                            chapters = adminChapters,
+                            questions = adminQuestions,
                             onBack = { navController.popBackStack() },
                             onSaveDepartment = { adminViewModel.saveDepartment(it) },
                             onDeleteDepartment = { adminViewModel.deleteDepartment(it) },
                             onSaveSubject = { adminViewModel.saveSubject(it) },
                             onDeleteSubject = { adminViewModel.deleteSubject(it) },
                             onSaveChapter = { adminViewModel.saveChapter(it) },
-                            onSaveQuestion = { adminViewModel.saveQuestion(it) }
+                            onSaveQuestion = { adminViewModel.saveQuestion(it) },
+                            onDeleteChapter = { adminViewModel.deleteChapter(it) },
+                            onDeleteQuestion = { adminViewModel.deleteQuestion(it) }
                         )
                     }
 
                     composable(AppRoutes.ADMIN_ANNOUNCEMENTS) {
+                        val adminAnnouncements by adminViewModel.adminAnnouncements.collectAsStateWithLifecycle()
                         AdminAnnouncementScreen(
-                            announcements = announcements,
+                            announcements = adminAnnouncements,
                             onBack = { navController.popBackStack() },
                             onSaveAnnouncement = { adminViewModel.saveAnnouncement(it) },
                             onDeleteAnnouncement = { adminViewModel.deleteAnnouncement(it) }
