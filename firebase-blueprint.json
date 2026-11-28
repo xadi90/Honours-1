@@ -343,6 +343,60 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "active", "createdAt", "updatedAt"]
+    },
+    "ChatUserProfile": {
+      "title": "ChatUserProfile",
+      "description": "Public student chat directory profile containing non-sensitive fields only (no email/phone)",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "departmentName": { "type": "string" },
+        "yearNumber": { "type": "integer" },
+        "photoUrl": { "type": "string" },
+        "isOnline": { "type": "boolean" },
+        "lastSeenAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "updatedAt"]
+    },
+    "UserChatThread": {
+      "title": "UserChatThread",
+      "description": "Direct 1-on-1 chat thread between two Honours students",
+      "type": "object",
+      "properties": {
+        "participantIds": { "type": "array" },
+        "participantNames": { "type": "object" },
+        "participantDepts": { "type": "object" },
+        "participantPhotos": { "type": "object" },
+        "lastMessageText": { "type": "string" },
+        "lastMessageSenderId": { "type": "string" },
+        "lastMessageAt": { "type": "string", "format": "date-time" },
+        "unreadCounts": { "type": "object" },
+        "typingUsers": { "type": "object" },
+        "blockedBy": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["participantIds", "createdAt", "updatedAt"]
+    },
+    "UserChatMessage": {
+      "title": "UserChatMessage",
+      "description": "Individual message inside a direct 1-on-1 student chat",
+      "type": "object",
+      "properties": {
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "replyToMessageId": { "type": "string" },
+        "replyToSenderName": { "type": "string" },
+        "replyToPreview": { "type": "string" },
+        "readBy": { "type": "array" },
+        "deletedForAll": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["senderId", "createdAt"]
     }
   },
   "firestore": {
@@ -417,6 +471,18 @@
     "/college_moderators/{moderatorEmail}": {
       "schema": { "$ref": "#/entities/CollegeModerator" },
       "description": "Dedicated moderators authorized only for Sujat Ali Honours College"
+    },
+    "/chat_profiles/{userId}": {
+      "schema": { "$ref": "#/entities/ChatUserProfile" },
+      "description": "Public student chat directory profiles (PII-free)"
+    },
+    "/chats/{chatId}": {
+      "schema": { "$ref": "#/entities/UserChatThread" },
+      "description": "Direct 1-on-1 student chat threads"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/UserChatMessage" },
+      "description": "Messages inside a direct student chat thread"
     }
   }
 }

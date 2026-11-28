@@ -326,7 +326,13 @@ data class AdminUserUsageSummary(
 @Keep
 @IgnoreExtraProperties
 data class AuthPolicyConfig(
-    val requireEmailOtp: Boolean = true
-)
-
-
+    val requireEmailOtp: Boolean = false,
+    val emailJsServiceId: String = "",
+    val emailJsTemplateId: String = "",
+    val emailJsPublicKey: String = ""
+) {
+    val hasEmailJsConfigured: Boolean
+        get() = emailJsServiceId.isNotBlank() &&
+            emailJsTemplateId.isNotBlank() &&
+            emailJsPublicKey.isNotBlank()
+}

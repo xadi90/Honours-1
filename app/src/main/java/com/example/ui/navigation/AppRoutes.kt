@@ -40,8 +40,11 @@ object AppRoutes {
     const val MCQ_PRACTICE = "mcq_practice"
     const val MODEL_TEST = "model_test"
 
-    // Profile, Settings, Info & College Portal
+    // Profile, Settings, Info, Student Chat & College Portal
     const val SUJAT_ALI_COLLEGE = "sujat_ali_college"
+    const val USER_CHAT_LIST = "user_chat_list"
+    const val USER_CHAT_ROOM = "user_chat_room/{chatId}"
+    fun userChatRoom(chatId: String) = "user_chat_room/$chatId"
     const val SETTINGS = "settings"
     const val ABOUT_DEVELOPER = "about_developer"
 

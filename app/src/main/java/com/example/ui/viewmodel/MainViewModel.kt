@@ -160,9 +160,9 @@ class MainViewModel(
     val authPolicy: StateFlow<AuthPolicyConfig> = firestoreRepo.observeAuthPolicy()
         .catch { error ->
             unwrapFirestoreErrorOrThrow(error, "auth_policy")
-            emit(AuthPolicyConfig(requireEmailOtp = true))
+            emit(AuthPolicyConfig(requireEmailOtp = false))
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AuthPolicyConfig(requireEmailOtp = true))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), AuthPolicyConfig(requireEmailOtp = false))
 
     private val _updateState = MutableStateFlow<UiState<AppUpdateInfo>>(UiState.Idle)
     val updateState: StateFlow<UiState<AppUpdateInfo>> = _updateState.asStateFlow()

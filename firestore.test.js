@@ -673,10 +673,13 @@ test("College moderators: scoped solely to Sujat Ali College, denied on /users &
     })
   );
 
-  // Bootstrapped admin controls auth_policy
+  // Bootstrapped admin controls auth_policy (including optional EmailJS config)
   await assertSucceeds(
     adminDb.collection("app_settings").doc("auth_policy").set({
       requireEmailOtp: true,
+      emailJsServiceId: "service_demo",
+      emailJsTemplateId: "template_demo",
+      emailJsPublicKey: "public_key_demo",
       updatedAt: now,
     })
   );
@@ -691,4 +694,193 @@ test("College moderators: scoped solely to Sujat Ali College, denied on /users &
     adminDb.collection("email_verifications").doc(ALICE_UID).set({ codeHash: "fake" })
   );
 });
+
+test("Student chat: PII-free /chat_profiles discovery, participant-only /chats & /messages, read receipts, delete, and blocking", async () => {
+  const EVE_UID = "eve_outsider_3";
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID, {
+    email: "alice@example.com",
+    email_verified: true,
+  }).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID, {
+    email: "bob@example.com",
+    email_verified: true,
+  }).firestore();
+  const eveDb = testEnv.authenticatedContext(EVE_UID, {
+    email: "eve@example.com",
+    email_verified: true,
+  }).firestore();
+
+  const now = new Date(Date.now() - 1000);
+  const chatId = `dm_${ALICE_UID}_${BOB_UID}`;
+
+  // /chat_profiles forbids leaking email or phone
+  await assertFails(
+    aliceDb.collection("chat_profiles").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Ayesha",
+      email: "alice@example.com",
+      yearNumber: 2,
+      isOnline: true,
+      updatedAt: now,
+    })
+  );
+  await assertFails(
+    aliceDb.collection("chat_profiles").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Ayesha",
+      phone: "01711000000",
+      yearNumber: 2,
+      isOnline: true,
+      updatedAt: now,
+    })
+  );
+
+  // Valid PII-free chat profiles succeed and are visible to signed-in students
+  await assertSucceeds(
+    aliceDb.collection("chat_profiles").doc(ALICE_UID).set({
+      userId: ALICE_UID,
+      displayName: "Ayesha",
+      departmentName: "রাষ্ট্রবিজ্ঞান",
+      yearNumber: 2,
+      photoUrl: "",
+      isOnline: true,
+      lastSeenAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    bobDb.collection("chat_profiles").doc(BOB_UID).set({
+      userId: BOB_UID,
+      displayName: "Rahim",
+      departmentName: "ইতিহাস",
+      yearNumber: 3,
+      photoUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==",
+      isOnline: true,
+      lastSeenAt: now,
+      updatedAt: now,
+    })
+  );
+
+  // Cross-user write on chat_profiles denied; read/list allowed (while /users stays blocked)
+  await assertFails(
+    bobDb.collection("chat_profiles").doc(ALICE_UID).update({
+      displayName: "Hacked",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+  await assertSucceeds(bobDb.collection("chat_profiles").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).get());
+
+  // Alice creates direct chat thread with Bob; outsider Eve cannot create or read it
+  await assertFails(
+    eveDb.collection("chats").doc(chatId).set({
+      participantIds: [ALICE_UID, BOB_UID],
+      lastMessageText: "",
+      blockedBy: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).set({
+      participantIds: [ALICE_UID, BOB_UID],
+      participantNames: { [ALICE_UID]: "Ayesha", [BOB_UID]: "Rahim" },
+      lastMessageText: "",
+      lastMessageSenderId: "",
+      unreadCounts: { [ALICE_UID]: 0, [BOB_UID]: 0 },
+      typingUsers: { [ALICE_UID]: 0, [BOB_UID]: 0 },
+      blockedBy: [],
+      createdAt: now,
+      updatedAt: now,
+    })
+  );
+  await assertFails(eveDb.collection("chats").doc(chatId).get());
+  await assertSucceeds(bobDb.collection("chats").where("participantIds", "array-contains", BOB_UID).get());
+
+  // Alice sends a text + image message; sender impersonation & Eve denied
+  await assertFails(
+    bobDb.collection("chats").doc(chatId).collection("messages").doc("spoof_msg").set({
+      senderId: ALICE_UID,
+      text: "Impersonated",
+      createdAt: now,
+    })
+  );
+  await assertFails(
+    eveDb.collection("chats").doc(chatId).collection("messages").doc("eve_msg").set({
+      senderId: EVE_UID,
+      text: "Intruder",
+      createdAt: now,
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).collection("messages").doc("msg_1").set({
+      senderId: ALICE_UID,
+      senderName: "Ayesha",
+      text: "কেমন আছো? নোটস লাগবে?",
+      imageUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ==",
+      readBy: [ALICE_UID],
+      deletedForAll: false,
+      createdAt: now,
+    })
+  );
+
+  // Outsider Eve cannot read messages
+  await assertFails(eveDb.collection("chats").doc(chatId).collection("messages").get());
+
+  // Bob marks msg_1 as read
+  await assertSucceeds(
+    bobDb.collection("chats").doc(chatId).collection("messages").doc("msg_1").update({
+      readBy: [ALICE_UID, BOB_UID],
+    })
+  );
+
+  // Bob cannot delete Alice's message for everyone, but Alice can delete her own
+  await assertFails(
+    bobDb.collection("chats").doc(chatId).collection("messages").doc("msg_1").update({
+      deletedForAll: true,
+      text: "",
+      imageUrl: "",
+    })
+  );
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).collection("messages").doc("msg_1").update({
+      deletedForAll: true,
+      text: "",
+      imageUrl: "",
+    })
+  );
+
+  // Alice blocks Bob; Bob cannot send new message or remove Alice's block
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).update({
+      blockedBy: [ALICE_UID],
+      updatedAt: new Date(Date.now() - 400),
+    })
+  );
+  await assertFails(
+    bobDb.collection("chats").doc(chatId).collection("messages").doc("msg_blocked").set({
+      senderId: BOB_UID,
+      senderName: "Rahim",
+      text: "Hello after block",
+      readBy: [BOB_UID],
+      deletedForAll: false,
+      createdAt: new Date(Date.now() - 300),
+    })
+  );
+  await assertFails(
+    bobDb.collection("chats").doc(chatId).update({
+      blockedBy: [],
+      updatedAt: new Date(Date.now() - 300),
+    })
+  );
+
+  // Alice can unblock Bob
+  await assertSucceeds(
+    aliceDb.collection("chats").doc(chatId).update({
+      blockedBy: [],
+      updatedAt: new Date(Date.now() - 200),
+    })
+  );
+});
+
 

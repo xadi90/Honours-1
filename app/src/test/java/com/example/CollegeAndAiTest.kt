@@ -237,9 +237,19 @@ class EmailOtpVerificationRobolectricTest {
             }
         }
         composeRule.waitForIdle()
-        // Student never sees admin bypass button even on HTTP 404
+        // Student never sees admin bypass button even on HTTP 404, and gets non-blocking continue option
         composeRule.onNodeWithTag("email_otp_admin_bypass_button").assertDoesNotExist()
+        composeRule.onNodeWithTag("email_otp_unconfigured_continue_button", useUnmergedTree = true).assertExists()
         composeRule.onNodeWithText("st***@gmail.com", substring = true, useUnmergedTree = true).assertExists()
+        assertFalse(com.example.data.model.AuthPolicyConfig().requireEmailOtp)
+        assertTrue(
+            com.example.data.model.AuthPolicyConfig(
+                requireEmailOtp = true,
+                emailJsServiceId = "svc_1",
+                emailJsTemplateId = "tpl_1",
+                emailJsPublicKey = "pub_1"
+            ).hasEmailJsConfigured
+        )
 
         // Enter wrong code first -> verify error banner appears
         composeRule.onNodeWithTag("email_otp_input").performTextInput("11111")

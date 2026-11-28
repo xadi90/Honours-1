@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import com.example.core.EmailOtpService
 import com.example.core.OtpSendResult
 import com.example.core.OtpVerifyResult
+import com.example.data.model.AuthPolicyConfig
 import com.example.ui.theme.Gold500
 import com.example.ui.theme.Navy700
 import com.example.ui.theme.Navy800
@@ -73,9 +74,10 @@ fun EmailOtpVerificationScreen(
     isBootstrappedAdmin: Boolean,
     onVerified: () -> Unit,
     onSignOut: () -> Unit,
+    authPolicy: AuthPolicyConfig = AuthPolicyConfig(),
     autoSendOnLaunch: Boolean = true,
-    sendOtp: suspend () -> OtpSendResult = { EmailOtpService.sendLoginOtp() },
-    verifyOtp: suspend (String) -> OtpVerifyResult = { EmailOtpService.verifyLoginOtp(it) }
+    sendOtp: suspend () -> OtpSendResult = { EmailOtpService.sendLoginOtp(authPolicy) },
+    verifyOtp: suspend (String) -> OtpVerifyResult = { EmailOtpService.verifyLoginOtp(it, authPolicy) }
 ) {
     val scope = rememberCoroutineScope()
     val maskedEmail = remember(email) { EmailOtpService.maskEmail(email) }
@@ -351,19 +353,29 @@ fun EmailOtpVerificationScreen(
                                     )
                                 }
                                 Text(
-                                    text = "Cloud Functions-এ sendLoginOtp ও verifyLoginOtp ডিপ্লয় না হওয়া পর্যন্ত শুধুমাত্র অ্যাডমিন প্রবেশ করে ড্যাশবোর্ড থেকে নীতি নিয়ন্ত্রণ করতে পারবেন।",
+                                    text = "এখনই প্রবেশ করে Admin Dashboard থেকে ফ্রি EmailJS সেটআপ করুন অথবা OTP নীতি নিয়ন্ত্রণ করুন।",
                                     style = MaterialTheme.typography.bodySmall
                                 )
-                                OutlinedButton(
+                                Button(
                                     onClick = onVerified,
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .minimumInteractiveComponentSize()
                                         .testTag("email_otp_admin_bypass_button")
                                 ) {
-                                    Text("আপাতত অ্যাডমিন হিসেবে প্রবেশ করুন")
+                                    Text("অ্যাডমিন হিসেবে প্রবেশ করুন")
                                 }
                             }
+                        }
+                    } else if (isFunctionNotDeployed) {
+                        OutlinedButton(
+                            onClick = onVerified,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .minimumInteractiveComponentSize()
+                                .testTag("email_otp_unconfigured_continue_button")
+                        ) {
+                            Text("OTP সার্ভিস সেটআপ বাকি — এখন প্রবেশ করুন")
                         }
                     }
 

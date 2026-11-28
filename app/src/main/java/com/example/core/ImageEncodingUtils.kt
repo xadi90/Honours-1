@@ -3,7 +3,9 @@ package com.example.core
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
+import android.os.Build
 import android.util.Base64
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -35,51 +37,144 @@ fun isValidCollegeImageInput(value: String): Boolean {
 
 suspend fun encodePickedImageToDataUri(context: Context, uri: Uri): Result<String> = withContext(Dispatchers.IO) {
     runCatching {
-        val resolver = context.contentResolver
+        val decodedBitmap = decodeUriToBitmap(context, uri)
+            ?: error("ছবিটি পড়া যায়নি। অনুগ্রহ করে অন্য একটি ছবি (JPG/PNG/WEBP/HEIC) চেষ্টা করুন।")
 
-        val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, boundsOptions)
-        } ?: error("ছবিটি পড়া যায়নি।")
-
-        val rawW = boundsOptions.outWidth
-        val rawH = boundsOptions.outHeight
-        require(rawW > 0 && rawH > 0) { "সঠিক ছবি নির্বাচন করুন।" }
-
-        val targetMaxDim = 960
-        var sampleSize = 1
-        while ((rawW / sampleSize) > targetMaxDim * 2 || (rawH / sampleSize) > targetMaxDim * 2) {
-            sampleSize *= 2
-        }
-
-        val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val decodedBitmap = resolver.openInputStream(uri)?.use { stream ->
-            BitmapFactory.decodeStream(stream, null, decodeOptions)
-        } ?: error("ছবিটি লোড করা যায়নি।")
-
-        var workingBitmap = downscaleBitmapIfNeeded(decodedBitmap, targetMaxDim)
+        var workingBitmap = downscaleBitmapIfNeeded(decodedBitmap, 960)
         if (workingBitmap !== decodedBitmap) {
             decodedBitmap.recycle()
         }
 
         try {
-            val dataUri = compressBitmapWithinLimit(workingBitmap, MAX_COLLEGE_IMAGE_DATA_URI_CHARS)
-            if (dataUri != null) {
-                return@runCatching dataUri
+            val targetDims = intArrayOf(960, 640, 480, 360)
+            for (dim in targetDims) {
+                if (max(workingBitmap.width, workingBitmap.height) > dim) {
+                    val resized = downscaleBitmapIfNeeded(workingBitmap, dim)
+                    if (resized !== workingBitmap) {
+                        workingBitmap.recycle()
+                        workingBitmap = resized
+                    }
+                }
+                val encoded = compressBitmapWithinLimit(workingBitmap, MAX_COLLEGE_IMAGE_DATA_URI_CHARS)
+                if (encoded != null) {
+                    return@runCatching encoded
+                }
             }
-            val smallerBitmap = downscaleBitmapIfNeeded(workingBitmap, 640)
-            if (smallerBitmap !== workingBitmap) {
-                workingBitmap.recycle()
-                workingBitmap = smallerBitmap
-            }
-            compressBitmapWithinLimit(workingBitmap, MAX_COLLEGE_IMAGE_DATA_URI_CHARS)
-                ?: error("ছবিটির সাইজ অনেক বড়। অনুগ্রহ করে তুলনামূলক ছোট ছবি দিন।")
+            error("ছবিটির সাইজ অনেক বড়। অনুগ্রহ করে তুলনামূলক ছোট ছবি দিন।")
         } finally {
             if (!workingBitmap.isRecycled) {
                 workingBitmap.recycle()
             }
         }
     }
+}
+
+private fun decodeUriToBitmap(context: Context, uri: Uri): Bitmap? {
+    val resolver = context.contentResolver
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val decodedWithImageDecoder = runCatching {
+            val source = ImageDecoder.createSource(resolver, uri)
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val rawW = info.size.width
+                val rawH = info.size.height
+                if (rawW > 0 && rawH > 0) {
+                    val maxSide = max(rawW, rawH)
+                    if (maxSide > 1080) {
+                        val scale = 1080f / maxSide.toFloat()
+                        decoder.setTargetSize(
+                            (rawW * scale).roundToInt().coerceAtLeast(1),
+                            (rawH * scale).roundToInt().coerceAtLeast(1)
+                        )
+                    }
+                }
+            }
+        }.getOrNull()
+        if (decodedWithImageDecoder != null) {
+            return decodedWithImageDecoder
+        }
+    }
+
+    val bytes = readAllUriBytes(context, uri) ?: return null
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        val decodedFromBytes = runCatching {
+            val source = ImageDecoder.createSource(java.nio.ByteBuffer.wrap(bytes))
+            ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+                decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                val rawW = info.size.width
+                val rawH = info.size.height
+                if (rawW > 0 && rawH > 0) {
+                    val maxSide = max(rawW, rawH)
+                    if (maxSide > 1080) {
+                        val scale = 1080f / maxSide.toFloat()
+                        decoder.setTargetSize(
+                            (rawW * scale).roundToInt().coerceAtLeast(1),
+                            (rawH * scale).roundToInt().coerceAtLeast(1)
+                        )
+                    }
+                }
+            }
+        }.getOrNull()
+        if (decodedFromBytes != null) {
+            return decodedFromBytes
+        }
+    }
+
+    val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, boundsOptions)
+    val rawW = boundsOptions.outWidth
+    val rawH = boundsOptions.outHeight
+    if (rawW <= 0 || rawH <= 0) {
+        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+
+    val targetMaxDim = 960
+    var sampleSize = 1
+    while ((rawW / sampleSize) > targetMaxDim * 2 || (rawH / sampleSize) > targetMaxDim * 2) {
+        sampleSize *= 2
+    }
+    val decodeOptions = BitmapFactory.Options().apply {
+        inSampleSize = sampleSize
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, decodeOptions)
+}
+
+private fun readAllUriBytes(context: Context, uri: Uri): ByteArray? {
+    val resolver = context.contentResolver
+    runCatching {
+        resolver.openInputStream(uri)?.use { stream ->
+            val data = stream.readBytes()
+            if (data.isNotEmpty()) return data
+        }
+    }
+    runCatching {
+        resolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+            afd.createInputStream().use { stream ->
+                val data = stream.readBytes()
+                if (data.isNotEmpty()) return data
+            }
+        }
+    }
+    runCatching {
+        resolver.openTypedAssetFileDescriptor(uri, "image/*", null)?.use { afd ->
+            afd.createInputStream().use { stream ->
+                val data = stream.readBytes()
+                if (data.isNotEmpty()) return data
+            }
+        }
+    }
+    runCatching {
+        resolver.openFileDescriptor(uri, "r")?.use { pfd ->
+            java.io.FileInputStream(pfd.fileDescriptor).use { stream ->
+                val data = stream.readBytes()
+                if (data.isNotEmpty()) return data
+            }
+        }
+    }
+    return null
 }
 
 private fun downscaleBitmapIfNeeded(bitmap: Bitmap, maxDimension: Int): Bitmap {
@@ -92,7 +187,7 @@ private fun downscaleBitmapIfNeeded(bitmap: Bitmap, maxDimension: Int): Bitmap {
 }
 
 private fun compressBitmapWithinLimit(bitmap: Bitmap, maxChars: Int): String? {
-    val qualities = intArrayOf(80, 70, 60, 48, 36)
+    val qualities = intArrayOf(82, 72, 60, 48, 36, 25)
     val stream = ByteArrayOutputStream()
     for (quality in qualities) {
         stream.reset()

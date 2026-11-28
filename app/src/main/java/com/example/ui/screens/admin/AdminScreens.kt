@@ -313,6 +313,10 @@ fun AdminDashboardScreen(
 
     var showUserDirectory by remember { mutableStateOf(false) }
     var userSearchQuery by remember { mutableStateOf("") }
+    var showEmailJsConfig by remember { mutableStateOf(false) }
+    var emailJsServiceId by remember(authPolicy.emailJsServiceId) { mutableStateOf(authPolicy.emailJsServiceId) }
+    var emailJsTemplateId by remember(authPolicy.emailJsTemplateId) { mutableStateOf(authPolicy.emailJsTemplateId) }
+    var emailJsPublicKey by remember(authPolicy.emailJsPublicKey) { mutableStateOf(authPolicy.emailJsPublicKey) }
 
     var devName by remember(developerProfile.name) { mutableStateOf(developerProfile.name) }
     var devTagline by remember(developerProfile.tagline) { mutableStateOf(developerProfile.tagline) }
@@ -587,10 +591,91 @@ fun AdminDashboardScreen(
                             Switch(
                                 checked = authPolicy.requireEmailOtp,
                                 onCheckedChange = { enabled ->
-                                    onSaveAuthPolicy(authPolicy.copy(requireEmailOtp = enabled))
+                                    onSaveAuthPolicy(
+                                        authPolicy.copy(
+                                            requireEmailOtp = enabled,
+                                            emailJsServiceId = emailJsServiceId.trim(),
+                                            emailJsTemplateId = emailJsTemplateId.trim(),
+                                            emailJsPublicKey = emailJsPublicKey.trim()
+                                        )
+                                    )
                                 },
                                 modifier = Modifier.testTag("admin_email_otp_policy_switch")
                             )
+                        }
+                        Text(
+                            text = if (authPolicy.hasEmailJsConfigured) {
+                                "স্ট্যাটাস: EmailJS সংযুক্ত আছে — ৫ সংখ্যার ইমেইল OTP সরাসরি কাজ করবে।"
+                            } else {
+                                "টিপস: সার্ভার/Cloud Function ছাড়াই ৫ সংখ্যার ইমেইল কোড চালু করতে নিচে ফ্রি EmailJS আইডি যুক্ত করুন।"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (authPolicy.hasEmailJsConfigured) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        TextButton(
+                            onClick = { showEmailJsConfig = !showEmailJsConfig },
+                            modifier = Modifier.testTag("admin_emailjs_toggle")
+                        ) {
+                            Text(
+                                if (showEmailJsConfig) "EmailJS সেটআপ লুকান"
+                                else "EmailJS ফ্রি সেটআপ (ক্লাউড ফাংশন ছাড়াই OTP)"
+                            )
+                        }
+                        if (showEmailJsConfig) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = "emailjs.com-এ ফ্রি অ্যাকাউন্ট খুলে Gmail কানেক্ট করুন এবং টেমপ্লেটে {{to_email}} ও {{otp_code}} ব্যবহার করে নিচের ৩টি তথ্য দিন:",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    OutlinedTextField(
+                                        value = emailJsServiceId,
+                                        onValueChange = { emailJsServiceId = it },
+                                        label = { Text("EmailJS Service ID") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("admin_emailjs_service_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = emailJsTemplateId,
+                                        onValueChange = { emailJsTemplateId = it },
+                                        label = { Text("EmailJS Template ID") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("admin_emailjs_template_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = emailJsPublicKey,
+                                        onValueChange = { emailJsPublicKey = it },
+                                        label = { Text("EmailJS Public Key") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("admin_emailjs_key_input")
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onSaveAuthPolicy(
+                                                authPolicy.copy(
+                                                    emailJsServiceId = emailJsServiceId.trim(),
+                                                    emailJsTemplateId = emailJsTemplateId.trim(),
+                                                    emailJsPublicKey = emailJsPublicKey.trim()
+                                                )
+                                            )
+                                        },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .minimumInteractiveComponentSize()
+                                            .testTag("admin_save_auth_policy_button")
+                                    ) {
+                                        Text("EmailJS সেটআপ সংরক্ষণ করুন")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

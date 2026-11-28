@@ -320,9 +320,12 @@ fun FirestoreRepository.observeAuthPolicy(): Flow<AuthPolicyConfig> =
     db.collection("app_settings").document("auth_policy")
         .snapshots()
         .map { snap ->
-            if (!snap.exists()) AuthPolicyConfig(requireEmailOtp = true)
+            if (!snap.exists()) AuthPolicyConfig(requireEmailOtp = false)
             else AuthPolicyConfig(
-                requireEmailOtp = snap.getBoolean("requireEmailOtp") ?: true
+                requireEmailOtp = snap.getBoolean("requireEmailOtp") ?: false,
+                emailJsServiceId = snap.getString("emailJsServiceId").orEmpty(),
+                emailJsTemplateId = snap.getString("emailJsTemplateId").orEmpty(),
+                emailJsPublicKey = snap.getString("emailJsPublicKey").orEmpty()
             )
         }
 
@@ -333,13 +336,16 @@ suspend fun FirestoreRepository.saveAuthPolicy(config: AuthPolicyConfig): Result
         db.document(path).set(
             mapOf(
                 "requireEmailOtp" to config.requireEmailOtp,
+                "emailJsServiceId" to config.emailJsServiceId.trim().take(120),
+                "emailJsTemplateId" to config.emailJsTemplateId.trim().take(120),
+                "emailJsPublicKey" to config.emailJsPublicKey.trim().take(120),
                 "updatedAt" to FieldValue.serverTimestamp()
             ),
             SetOptions.merge()
         ).await()
         logAdminAction(
             "UPDATE_AUTH_POLICY",
-            "Email 5-digit OTP on login=${config.requireEmailOtp}"
+            "Email 5-digit OTP on login=${config.requireEmailOtp} (EmailJS=${config.hasEmailJsConfigured})"
         )
         Result.success(Unit)
     } catch (e: CancellationException) {

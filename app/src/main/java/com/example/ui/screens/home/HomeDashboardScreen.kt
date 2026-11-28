@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Menu
@@ -49,6 +50,8 @@ import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -133,7 +136,9 @@ fun HomeDashboardScreen(
     isOnline: Boolean = true,
     collegeTitleBn: String = "সুজাত আলী অনার্স কলেজ, পিংনা",
     collegeSubtitleEn: String = "Sujat Ali Honours College, Pingna",
-    onCollegePortalClick: () -> Unit = {}
+    onCollegePortalClick: () -> Unit = {},
+    unreadChatCount: Int = 0,
+    onUserChatClick: () -> Unit = {}
 ) {
     val studentName = profile?.displayName?.takeIf { it.isNotBlank() } ?: "NU Student"
     val recentPdfs = remember(pdfs, recentPdfIds) {
@@ -184,11 +189,33 @@ fun HomeDashboardScreen(
                         )
                     }
                 }
-                IconButton(
-                    onClick = onOpenDrawer,
-                    modifier = Modifier.testTag("home_menu_button")
-                ) {
-                    Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = onUserChatClick,
+                        modifier = Modifier.testTag("home_chat_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (unreadChatCount > 0) {
+                                    Badge {
+                                        Text(if (unreadChatCount > 99) "99+" else "$unreadChatCount")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Forum,
+                                contentDescription = "শিক্ষার্থী চ্যাট",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onOpenDrawer,
+                        modifier = Modifier.testTag("home_menu_button")
+                    ) {
+                        Icon(Icons.Default.Menu, contentDescription = "Open menu")
+                    }
                 }
             }
         }
@@ -528,6 +555,73 @@ fun HomeDashboardScreen(
                         Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "Open Sujat Ali Honours College",
                         tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        // Student-to-Student Live Chat Card
+        item {
+            Card(
+                onClick = onUserChatClick,
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, Emerald600.copy(alpha = 0.45f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("home_user_chat_card")
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Surface(
+                        color = Emerald600.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.size(50.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Forum,
+                                contentDescription = "শিক্ষার্থী চ্যাট",
+                                tint = Emerald600,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "শিক্ষার্থী চ্যাট (লাইভ মেসেজিং)",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (unreadChatCount > 0) {
+                                Badge(
+                                    containerColor = Emerald600,
+                                    contentColor = Color.White
+                                ) {
+                                    Text("$unreadChatCount")
+                                }
+                            }
+                        }
+                        Text(
+                            text = "সহপাঠীদের সাথে রিয়েল-টাইম মেসেজ ও ছবি শেয়ার করুন",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowForward,
+                        contentDescription = "চ্যাট খুলুন",
+                        tint = Emerald600
                     )
                 }
             }

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lightbulb
@@ -48,6 +49,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -62,8 +64,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
@@ -81,6 +86,7 @@ import com.example.data.model.AnswerLength
 import com.example.data.model.AuthPolicyConfig
 import com.example.data.model.UiState
 import com.example.data.repository.AiRepository
+import com.example.data.repository.FirestoreChatRepository
 import com.example.data.repository.FirestoreRepository
 import com.example.data.repository.observeAuthPolicy
 import com.example.ui.components.OfflineStatusBanner
@@ -102,6 +108,8 @@ import com.example.ui.screens.auth.EmailOtpVerificationScreen
 import com.example.ui.screens.auth.FirebaseConfigErrorScreen
 import com.example.ui.screens.auth.OnboardingScreen
 import com.example.ui.screens.auth.SplashScreen
+import com.example.ui.screens.chat.UserChatListScreen
+import com.example.ui.screens.chat.UserChatRoomScreen
 import com.example.ui.screens.college.SujatAliCollegeScreen
 import com.example.ui.screens.exams.McqPracticeScreen
 import com.example.ui.screens.exams.ModelTestScreen
@@ -126,6 +134,7 @@ import com.example.ui.theme.HonoursSolutionTheme
 import com.example.ui.viewmodel.AcademicViewModel
 import com.example.ui.viewmodel.AdminViewModel
 import com.example.ui.viewmodel.AiViewModel
+import com.example.ui.viewmodel.ChatViewModel
 import com.example.ui.viewmodel.MainViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
@@ -180,10 +189,10 @@ fun HonoursSolutionApp() {
         if (authRepo != null && currentUser != null) {
             authRepo.observeAuthPolicy()
         } else {
-            kotlinx.coroutines.flow.flowOf(AuthPolicyConfig(requireEmailOtp = true))
+            kotlinx.coroutines.flow.flowOf(AuthPolicyConfig(requireEmailOtp = false))
         }
     }
-    val authPolicy by authPolicyFlow.collectAsStateWithLifecycle(initialValue = AuthPolicyConfig(requireEmailOtp = true))
+    val authPolicy by authPolicyFlow.collectAsStateWithLifecycle(initialValue = AuthPolicyConfig(requireEmailOtp = false))
     val credentialManager = remember(context) {
         runCatching { CredentialManager.create(context) }.getOrNull()
     }
@@ -212,12 +221,19 @@ fun HonoursSolutionApp() {
                 currentUser?.let { activeUser ->
                     val needsEmailOtp = authPolicy.requireEmailOtp && verifiedOtpUid != activeUser.uid
                     if (needsEmailOtp) {
-                        val isAdminEmail = activeUser.isEmailVerified &&
-                            activeUser.email?.lowercase() in setOf("xadiahmed7@gmail.com", "xadiahmed23@gmail.com")
+                        val adminEmails = setOf("xadiahmed7@gmail.com", "xadiahmed23@gmail.com")
+                        val candidateEmails = buildList {
+                            activeUser.email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { add(it) }
+                            activeUser.providerData.forEach { info ->
+                                info.email?.trim()?.lowercase()?.takeIf { it.isNotBlank() }?.let { add(it) }
+                            }
+                        }
+                        val isAdminEmail = candidateEmails.any { it in adminEmails }
                         key("otp_${activeUser.uid}") {
                             EmailOtpVerificationScreen(
-                                email = activeUser.email.orEmpty(),
+                                email = candidateEmails.firstOrNull().orEmpty(),
                                 isBootstrappedAdmin = isAdminEmail,
+                                authPolicy = authPolicy,
                                 onVerified = {
                                     scope.launch { prefs.setVerifiedOtpUid(activeUser.uid) }
                                 },
@@ -254,6 +270,7 @@ private fun MainAuthenticatedShell(
     }
 
     val firestoreRepo = remember(appContext) { FirestoreRepository(appContext) }
+    val chatRepo = remember(appContext) { FirestoreChatRepository(appContext) }
     val aiRepo = remember { AiRepository() }
     val networkMonitor = remember(appContext) { NetworkMonitor(appContext) }
 
@@ -293,6 +310,16 @@ private fun MainAuthenticatedShell(
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                 return AdminViewModel(firestoreRepo, prefs, appContext) as T
+            }
+        }
+    )
+
+    val chatViewModel: ChatViewModel = viewModel(
+        key = "chat_$currentUserId",
+        factory = object : ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                return ChatViewModel(chatRepo, currentUserId) as T
             }
         }
     )
@@ -352,6 +379,18 @@ private fun MainAuthenticatedShell(
     val adminToast by adminViewModel.adminToast.collectAsStateWithLifecycle()
 
     val userProfile = (userProfileState as? UiState.Success)?.data
+    val chatDirectoryUsers by chatViewModel.directoryUsers.collectAsStateWithLifecycle()
+    val myChats by chatViewModel.myChats.collectAsStateWithLifecycle()
+    val totalUnreadChatCount by chatViewModel.totalUnreadCount.collectAsStateWithLifecycle()
+    val activeChatThread by chatViewModel.activeThread.collectAsStateWithLifecycle()
+    val activeChatMessages by chatViewModel.activeMessages.collectAsStateWithLifecycle()
+    val chatReplyingTo by chatViewModel.replyingTo.collectAsStateWithLifecycle()
+    val chatPendingImage by chatViewModel.pendingImageDataUri.collectAsStateWithLifecycle()
+    val isProcessingChatImage by chatViewModel.isProcessingImage.collectAsStateWithLifecycle()
+    val isSendingChatMessage by chatViewModel.isSending.collectAsStateWithLifecycle()
+    val isOpeningChat by chatViewModel.isOpeningChat.collectAsStateWithLifecycle()
+    val chatToast by chatViewModel.chatToast.collectAsStateWithLifecycle()
+
     val departments = (departmentsState as? UiState.Success)?.data ?: AcademicSeedCatalog.defaultDepartments
     val subjects = (subjectsState as? UiState.Success)?.data ?: AcademicSeedCatalog.starterSubjects
     val chapters = (chaptersState as? UiState.Success)?.data ?: AcademicSeedCatalog.starterChapters
@@ -368,6 +407,26 @@ private fun MainAuthenticatedShell(
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val snackbarHostState = remember { SnackbarHostState() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(userProfile?.displayName, userProfile?.selectedDepartmentName, userProfile?.selectedYear, userProfile?.photoUrl) {
+        chatViewModel.syncMyProfile(userProfile)
+    }
+
+    DisposableEffect(lifecycleOwner, currentUserId) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> chatViewModel.setOnlineStatus(true)
+                Lifecycle.Event.ON_PAUSE, Lifecycle.Event.ON_STOP -> chatViewModel.setOnlineStatus(false)
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            chatViewModel.setOnlineStatus(false)
+        }
+    }
 
     LaunchedEffect(mainActionMsg) {
         mainActionMsg?.let { msg ->
@@ -385,6 +444,12 @@ private fun MainAuthenticatedShell(
         adminToast?.let { msg ->
             snackbarHostState.showSnackbar(msg)
             adminViewModel.clearAdminToast()
+        }
+    }
+    LaunchedEffect(chatToast) {
+        chatToast?.let { msg ->
+            snackbarHostState.showSnackbar(msg)
+            chatViewModel.clearChatToast()
         }
     }
 
@@ -490,6 +555,13 @@ private fun MainAuthenticatedShell(
                         selected = currentRoute == AppRoutes.SUJAT_ALI_COLLEGE,
                         onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) },
                         icon = { Icon(Icons.Default.AccountBalance, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("শিক্ষার্থী চ্যাট (লাইভ)") },
+                        selected = currentRoute == AppRoutes.USER_CHAT_LIST || currentRoute == AppRoutes.USER_CHAT_ROOM,
+                        onClick = { scope.launch { drawerState.close() }; navController.navigate(AppRoutes.USER_CHAT_LIST) },
+                        icon = { Icon(Icons.Default.Forum, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 12.dp)
                     )
                     NavigationDrawerItem(
@@ -644,7 +716,9 @@ private fun MainAuthenticatedShell(
                             isOnline = isOnline,
                             collegeTitleBn = collegeProfile.collegeNameBn,
                             collegeSubtitleEn = collegeProfile.collegeNameEn,
-                            onCollegePortalClick = { navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) }
+                            onCollegePortalClick = { navController.navigate(AppRoutes.SUJAT_ALI_COLLEGE) },
+                            unreadChatCount = totalUnreadChatCount,
+                            onUserChatClick = { navController.navigate(AppRoutes.USER_CHAT_LIST) }
                         )
                     }
 
@@ -1048,6 +1122,68 @@ private fun MainAuthenticatedShell(
                                     navController.navigate(AppRoutes.ADMIN_PASSWORD)
                                 }
                             }
+                        )
+                    }
+
+                    composable(AppRoutes.USER_CHAT_LIST) {
+                        UserChatListScreen(
+                            currentUserId = currentUserId,
+                            chats = myChats,
+                            directoryUsers = chatDirectoryUsers,
+                            isOpeningChat = isOpeningChat,
+                            onBackClick = { navController.popBackStack() },
+                            onOpenThread = { thread ->
+                                chatViewModel.openChatById(thread.id)
+                                navController.navigate(AppRoutes.userChatRoom(thread.id))
+                            },
+                            onStartChatWithUser = { partner ->
+                                chatViewModel.openChatWithUser(partner, userProfile) { chatId ->
+                                    navController.navigate(AppRoutes.userChatRoom(chatId))
+                                }
+                            }
+                        )
+                    }
+
+                    composable(
+                        route = AppRoutes.USER_CHAT_ROOM,
+                        arguments = listOf(navArgument("chatId") { type = NavType.StringType })
+                    ) { backStackEntry ->
+                        val chatId = backStackEntry.arguments?.getString("chatId") ?: ""
+                        LaunchedEffect(chatId) {
+                            if (chatId.isNotBlank()) {
+                                chatViewModel.openChatById(chatId)
+                            }
+                        }
+                        DisposableEffect(chatId) {
+                            onDispose {
+                                chatViewModel.closeActiveChat()
+                            }
+                        }
+                        val partnerUid = activeChatThread?.partnerUid(currentUserId).orEmpty()
+                        val partnerProfile = chatDirectoryUsers.firstOrNull { it.userId == partnerUid }
+                        val myDisplayName = userProfile?.displayName?.takeIf { it.isNotBlank() } ?: "NU Student"
+                        UserChatRoomScreen(
+                            currentUserId = currentUserId,
+                            thread = activeChatThread,
+                            partnerProfile = partnerProfile,
+                            messages = activeChatMessages,
+                            replyingTo = chatReplyingTo,
+                            pendingImageDataUri = chatPendingImage,
+                            isProcessingImage = isProcessingChatImage,
+                            isSending = isSendingChatMessage,
+                            onBackClick = {
+                                chatViewModel.closeActiveChat()
+                                navController.popBackStack()
+                            },
+                            onComposerTextChanged = { chatViewModel.onComposerTextChanged(it) },
+                            onAttachPhotoUri = { uri -> chatViewModel.attachPhotoUri(context, uri) },
+                            onClearPendingPhoto = { chatViewModel.clearPendingImage() },
+                            onSelectReply = { chatViewModel.setReplyingTo(it) },
+                            onSendMessage = { text -> chatViewModel.sendMessage(myDisplayName, text) },
+                            onMarkRead = { chatViewModel.markActiveChatRead() },
+                            onDeleteMessageForAll = { msgId -> chatViewModel.deleteMessageForEveryone(msgId) },
+                            onToggleBlock = { chatViewModel.toggleBlockPartner() },
+                            onReportUser = { reason, details -> chatViewModel.reportPartner(reason, details) }
                         )
                     }
 
